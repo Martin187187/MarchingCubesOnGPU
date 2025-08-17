@@ -1,0 +1,154 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Grass
+  m_Shader: {fileID: 4800000, guid: f6770f546ecb4151bfb02e4976c44a25, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BumpMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailAlbedoMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailMask:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailNormalMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _EmissionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _GrassTex:
+        m_Texture: {fileID: 2800000, guid: 2038a37a87e1eff4fa5efd69c9d1312e, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MainTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MetallicGlossMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _OcclTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _OcclusionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ParallaxMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Tex:
+        m_Texture: {fileID: 2800000, guid: 2af1601ba09f43e4f8b69a794b72fb75, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _TexArray:
+        m_Texture: {fileID: -7639397621201060638, guid: d4ee4946d03c334478a983f26b9ee02a, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _WindTex:
+        m_Texture: {fileID: 2800000, guid: e5055e0d246bd1047bdb28057a93753c, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _AmbientBoost: 0.104
+    - _ArrayCount: 4
+    - _Bend: 0.37
+    - _BladeHeight: 0.7
+    - _BladeWidth: 0.12
+    - _BumpScale: 1
+    - _BypassFilter: 0
+    - _ColorJitter: 0.224
+    - _CoverageBoost: 0.249
+    - _Cutoff: 0.471
+    - _Darkening: 0.881
+    - _Density: 5
+    - _DetailNormalMapScale: 1
+    - _DstBlend: 0
+    - _GlossMapScale: 1
+    - _Glossiness: 0.5
+    - _GlossyReflections: 1
+    - _GrassSlice: 2
+    - _Height: 0.49
+    - _JitterRadius: 0.8
+    - _LODEnd: 400
+    - _LODStart: 100
+    - _Lift: 0
+    - _MaxQuadsPerVertex: 5
+    - _MaxSlopeDeg: 34.9
+    - _Metallic: 0
+    - _MinDensity: 0.15
+    - _Mode: 0
+    - _OcclBias: 0.02
+    - _OcclMaxY: 100
+    - _OcclMinY: 0
+    - _OcclusionStrength: 1
+    - _Parallax: 0.02
+    - _ShadowDim: 1
+    - _ShadowThickenDistance: 12.3
+    - _ShadowThickenPower: 1.49
+    - _ShadowTopFade: 0.8
+    - _ShadowTopMin: 0.35
+    - _SizeJitter: 0.417
+    - _SmoothnessTextureChannel: 0
+    - _SpecularHighlights: 1
+    - _SrcBlend: 1
+    - _ThicknessPower: 2.84
+    - _ThicknessWeight: 1.08
+    - _TiltDeg: 10.1
+    - _TopWidth: 1
+    - _TransOccl: 4
+    - _TransPower: 5.05
+    - _Translucency: 0.689
+    - _UV2XMin: 1
+    - _UVSec: 0
+    - _WeightChan: 1
+    - _WeightMin: 0
+    - _Width: 1
+    - _WindAmp: 0.1
+    - _WindDirDeg: 63
+    - _WindFreq: 1.2
+    - _WindSpeed: 0.0124
+    - _WindStrength: 0.267
+    - _YawJitterDeg: 180
+    - _ZWrite: 1
+    m_Colors:
+    - _Color: {r: 0.6258859, g: 0.764151, b: 0.29196337, a: 1}
+    - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _OcclOriginWS: {r: 0, g: 0, b: 0, a: 0}
+    - _OcclSizeWS: {r: 100, g: 0, b: 100, a: 0}
+    - _Tint: {r: 0.6355557, g: 0.8396226, b: 0.20198467, a: 1}
+    - _WindDir: {r: 1, g: 0, b: 1, a: 0}
+    - _WindTiling: {r: 0.08, g: 0.08, b: 0, a: 0}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

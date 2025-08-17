@@ -1,0 +1,18 @@
+static const int numThreads = 8;
+
+struct Voxel
+{
+    uint type;
+    float iso;
+};
+
+struct Vertex {
+    float3 position;
+    float3 normal;
+    int data;
+};
+struct Triangle {
+    Vertex vertexC;
+    Vertex vertexB;
+    Vertex vertexA;
+};
