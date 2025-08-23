@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 28c9a81ec7fc45d18bf595086b615668, type: 3}
+  m_Name: BuildFloor
+  m_EditorClassIdentifier: 
+  displayName: Build Floor
+  operation: 2
+  strength: -0.04
+  smoothStrength: 0.02
+  shape: 2
+  sphereRadius: 2
+  boxSize: {x: 6, y: 1, z: 6}
+  sphereRadiusRange: {x: 0.1, y: 12}
+  boxSizeMin: {x: 3, y: 0.5, z: 3}
+  boxSizeMax: {x: 12, y: 2, z: 12}
+  anchored: 1
+  lockYawWhileActive: 1
+  hideBrush: 0
+  allowPositionSnap: 1
+  allowYawSnap: 1
+  allowTypeAnchor: 0
+  fillType: 5

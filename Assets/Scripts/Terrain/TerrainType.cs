@@ -1,5 +1,5 @@
 ﻿public enum TerrainType
 {
-     Dirt, Grass, Rock, CrackedRock, Beton, IronOre, Coal
+     Error, Dirt, Grass, Rock, CrackedRock, Beton, IronOre, Coal
 }
 

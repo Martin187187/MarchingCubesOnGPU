@@ -130,7 +130,7 @@ Material:
     - _TransOccl: 4
     - _TransPower: 5.05
     - _Translucency: 0.689
-    - _UV2XMin: 1
+    - _UV2XMin: 2
     - _UVSec: 0
     - _WeightChan: 1
     - _WeightMin: 0

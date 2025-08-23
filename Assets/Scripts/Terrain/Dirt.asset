@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 19813b0a83ea9784d8b0ca3ed27286a3, type: 3}
   m_Name: Dirt
   m_EditorClassIdentifier: 
-  type: 0
+  type: 1
   offset: {x: 0, y: 0, z: 0}
   octaves: 2
   noiseScale: 1

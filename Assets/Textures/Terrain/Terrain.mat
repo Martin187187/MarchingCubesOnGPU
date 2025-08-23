@@ -25,7 +25,8 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
-  m_InvalidKeywords: []
+  m_InvalidKeywords:
+  - _USELABPBR_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -108,13 +109,16 @@ Material:
     m_Ints: []
     m_Floats:
     - _AO: 0.8
+    - _AOContrast: 2.17
+    - _AOIntensity: 1
+    - _AOMin: 0.63
     - _AddPrecomputedVelocity: 0
     - _AlphaClip: 0
     - _AlphaToMask: 0
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
     - _BumpScale: 1
-    - _BumpStrength: 0.39
+    - _BumpStrength: 0.28
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
     - _Cull: 2
@@ -123,22 +127,27 @@ Material:
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _DstBlendAlpha: 0
+    - _EmissionBoost: 1
     - _EnvironmentReflections: 1
+    - _FlipGreen: 0
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
+    - _LabMetalThreshold: 0.34
     - _Metallic: 0.08
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1
+    - _ShadowFill: 0
     - _Smoothness: 0.11
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
-    - _TextureScale: 0.79
+    - _TextureScale: 0.42
+    - _UseLabPBR: 1
     - _WorkflowMode: 1
     - _ZWrite: 1
     m_Colors:
