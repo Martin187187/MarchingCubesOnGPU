@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   displayName: Dig
   operation: 1
-  strength: -0.1
+  strength: -0.5
   smoothStrength: 0.02
   shape: 0
   sphereRadius: 4

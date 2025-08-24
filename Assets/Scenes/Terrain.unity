@@ -402,7 +402,7 @@ MonoBehaviour:
   - {fileID: 2100000, guid: a64209fa4efbaa548941915bf216a848, type: 2}
   marchingCubesShader: {fileID: 7200000, guid: 4d5abe35a90c41099f8860b5b4a1b6bf, type: 3}
   noiseShader: {fileID: 7200000, guid: c79b902e95db45fca7919f163758f6ac, type: 3}
-  numberOfChunks: {x: 4, y: 4, z: 4}
+  numberOfChunks: {x: 10, y: 4, z: 10}
   gridSize: 32
   chunkSize: 16
   isoLevel: 0.5
