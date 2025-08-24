@@ -142,13 +142,13 @@ public class TerrainController : MonoBehaviour
     /// Sphere operation. Positive strength builds, negative breaks.
     /// radiusWorld is in world units.
     /// </summary>
-    public void EditSphere(Vector3 centerWorld, float radiusWorld, float strengthWorld, TerrainType fillType, bool forceSameBlock = false)
+    public void EditSphere(Vector3 centerWorld, float radiusWorld, float strengthWorld, TerrainType fillType, float breakingProgress = 0, bool forceSameBlock = false, bool forceReplace = false)
     {
         Vector3 centerGrid = centerWorld * (gridSize - 3f) / chunkSize;
         float radiusGrid = radiusWorld * (gridSize - 3f) / chunkSize;
         ApplyToAffectedChunks(centerGrid, radiusGrid, (chunk, localCenter) =>
         {
-            chunk.UpdateVoxelGridWithSphere(localCenter, radiusGrid / 2f, strengthWorld * (gridSize - 3f) / chunkSize, fillType, inventory, true, forceSameBlock);
+            chunk.UpdateVoxelGridWithSphere(localCenter, radiusGrid / 2f, strengthWorld * (gridSize - 3f) / chunkSize, fillType, inventory, breakingProgress, true, forceSameBlock, forceReplace);
         });
     }
 
@@ -156,7 +156,7 @@ public class TerrainController : MonoBehaviour
     /// Box operation. Positive strength builds, negative breaks.
     /// sizeWorld is full extents (scale) in world units. rotationWorld is world rotation for the box.
     /// </summary>
-    public void EditCube(Vector3 centerWorld, Vector3 sizeWorld, Quaternion rotationWorld, float strengthWorld, TerrainType fillType)
+    public void EditCube(Vector3 centerWorld, Vector3 sizeWorld, Quaternion rotationWorld, float strengthWorld, TerrainType fillType, float breakingProgress = 0, bool forceReplace = false)
     {
         // Convert world center to grid for chunk-local addressing.
         Vector3 centerGrid = centerWorld * (gridSize - 3f) / chunkSize;
@@ -175,7 +175,7 @@ public class TerrainController : MonoBehaviour
                 rotationWorld,
                 strengthWorld * (gridSize - 3f) / chunkSize,
                 fillType,
-                inventory);
+                inventory, breakingProgress, false, false, forceReplace);
         });
     }
 

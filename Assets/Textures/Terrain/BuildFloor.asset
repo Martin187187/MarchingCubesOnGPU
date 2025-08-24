@@ -29,3 +29,5 @@ MonoBehaviour:
   allowYawSnap: 1
   allowTypeAnchor: 0
   fillType: 5
+  enableChargeHold: 0
+  chargeTimeSeconds: 0.25

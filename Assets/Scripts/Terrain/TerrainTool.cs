@@ -1,4 +1,4 @@
-using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(TerrainController))]
@@ -14,6 +14,10 @@ public class TerrainTool : MonoBehaviour
     [Header("Preset Hotkeys (optional)")]
     public TerrainToolPreset[] quickPresets;
     public KeyCode[] quickPresetKeys = { KeyCode.F1, KeyCode.F2, KeyCode.F3, KeyCode.F4, KeyCode.F5, KeyCode.F6, KeyCode.F7 };
+
+    [Header("Raycast")]
+    [Tooltip("Only these layers will be hit by the cursor ray. Defaults to the 'Terrain' layer.")]
+    public LayerMask terrainRaycastMask;
 
     [Header("Snapping (toggles + modifier key)")]
     public bool  snapPositionToggle    = false;
@@ -56,10 +60,39 @@ public class TerrainTool : MonoBehaviour
     private float currentRadius;
     private Vector3 currentBoxSize;
 
+    // Charge/cooldown state
+    private float _holdStartTime = -1f;
+    private bool  _primedThisHold = false;
+
+    // Per-preset next-ready time (cooldown)
+    private readonly Dictionary<TerrainToolPreset, float> _nextReadyTime = new();
+
+    // Target tracking (for reset-on-move)
+    private Vector3 _lastTargetWorld;
+    private Vector3 _prevTargetWorld;
+    private bool    _hadPrevTarget;
+
+    // *** CHANGED *** (use linear epsilon; compare squared distance to squared epsilon)
+    private const float TARGET_MOVE_EPS_LINEAR = 0.01f; // ~1 cm
+
+    // *** CHANGED *** Preview throttling to reduce heavy preview writes
+    private Vector3 _lastPreviewPos;
+    private float   _lastPreviewTime = -1f;
+    private const float PREVIEW_MIN_INTERVAL = 1f / 30f; // cap preview writes at ~30 Hz
+    private const float PREVIEW_MOVE_FRAC_OF_RADIUS = 0.02f; // 2% of radius
+
     void Awake()
     {
         if (!terrain) terrain = GetComponent<TerrainController>();
         if (!cam) cam = Camera.main;
+
+        // Default to a layer named "Terrain" if mask not set in inspector
+        if (terrainRaycastMask == 0)
+        {
+            int idx = LayerMask.NameToLayer("Terrain");
+            terrainRaycastMask = idx >= 0 ? (1 << idx) : LayerMask.GetMask("Terrain");
+        }
+
         CreateBrushVisuals();
         PullSizesFromPreset();
         ApplyPresetVisuals();
@@ -73,24 +106,38 @@ public class TerrainTool : MonoBehaviour
     void Update()
     {
         HandleHotkeys();
-        if (!cam || preset == null) { ForceBrushHidden(true); return; }
+        if (!cam || !preset) { ForceBrushHidden(true); return; }
+        if (preset.operation == ToolOperation.None) { ForceBrushHidden(true); return; }
 
-        // None → no indicator and no edits
-        if (preset.operation == ToolOperation.None)
-        {
-            ForceBrushHidden(true);
-            return;
-        }
-
-        // respect explicit hide flag too
         ForceBrushHidden(preset.hideBrush);
 
-        if (!Physics.Raycast(cam.ScreenPointToRay(Input.mousePosition), out var hit)) return;
+        // Raycast only against allowed layers
+        if (!Physics.Raycast(
+                cam.ScreenPointToRay(Input.mousePosition),
+                out var hit,
+                Mathf.Infinity,
+                terrainRaycastMask,
+                QueryTriggerInteraction.Ignore))
+            return;
+
         Vector3 hoverPos = hit.point;
 
         // Snapping
         (bool posSnap, bool yawSnap) = GetSnapActive(preset);
         Vector3 snappedHoverPos = posSnap ? terrain.SnapToGrid(hoverPos) : hoverPos;
+
+        // Determine the current target (respect anchoring)
+        Vector3 currentTarget = (preset.anchored && hasAnchor) ? anchorPos : snappedHoverPos;
+
+        // Detect target movement (post-snap/anchor). If it moved, reset charge state & optionally cooldown.
+        if (_hadPrevTarget && (currentTarget - _prevTargetWorld).sqrMagnitude > TARGET_MOVE_EPS_LINEAR * TARGET_MOVE_EPS_LINEAR) // *** CHANGED ***
+        {
+            ResetProgressOnTargetChange(currentTarget, Input.GetMouseButton(0)); // *** CHANGED *** pass isHeld
+        }
+        _prevTargetWorld = currentTarget;
+        _hadPrevTarget = true;
+
+        _lastTargetWorld = currentTarget;
 
         // Anchor lifecycle
         HandleAnchorLifecycle(preset, snappedHoverPos, yawSnap);
@@ -101,16 +148,161 @@ public class TerrainTool : MonoBehaviour
             anchoredBreakType = terrain.terrainType;
         prevTypeAnchorActive = typeAnchorActive;
 
-        // Wheel scaling (runtime only, clamped to preset range)
+        // Wheel scaling
         HandleScrollScale(preset);
 
         // Brush transform
-        Vector3 brushPos = (preset.anchored && hasAnchor) ? anchorPos : snappedHoverPos;
+        Vector3 brushPos = currentTarget;
         UpdateBrushVisualTransform(brushPos, yawSnap, preset);
 
-        // Apply action while LMB held
+        // Input edges
+        if (Input.GetMouseButtonDown(0))
+        {
+            _holdStartTime = Time.time;
+            _primedThisHold = !preset.enableChargeHold; // if no charge required, already primed
+
+            // *** CHANGED *** Initialize preview throttle anchor
+            _lastPreviewPos = brushPos;
+            _lastPreviewTime = Time.time;
+        }
+        if (Input.GetMouseButtonUp(0))
+        {
+            _holdStartTime = -1f;
+            _primedThisHold = false;
+
+            // Clear crack preview when released (sphere/break only)
+            if (preset.operation == ToolOperation.Break && preset.shape == BrushShape.Sphere)
+                SendCrackProgress(_lastTargetWorld, 0f);
+        }
+
+        // If not held, we stop here—no preview writes at all when idle. *** CHANGED ***
         if (!Input.GetMouseButton(0)) return;
-        ApplyOperation(preset, snappedHoverPos);
+
+        // --------- CRACK PREVIEW DURING CHARGE / COOLDOWN (SPHERE/BREAK ONLY) ----------
+        if (preset.operation == ToolOperation.Break && preset.shape == BrushShape.Sphere)
+        {
+            Vector3 p = _lastTargetWorld;
+
+            // Charging phase: show cracks; when done, PRIME and continue to fire path
+            if (preset.enableChargeHold && !_primedThisHold)
+            {
+                float need = Mathf.Max(0.0001f, preset.chargeTimeSeconds);
+                float elapsed = Time.time - _holdStartTime;
+                if (elapsed >= need)
+                {
+                    _primedThisHold = true;          // prime after charge
+                    ThrottledCrackPreview(p, 1f);    // *** CHANGED *** throttled
+                }
+                else
+                {
+                    float prog = Mathf.Clamp01(elapsed / need);
+                    ThrottledCrackPreview(p, prog);  // *** CHANGED *** throttled
+                    return; // still charging; don't attempt cooldown fire yet
+                }
+            }
+
+            // After primed: if still on cooldown, show cracks based on cooldown progress to next shot
+            if (!IsToolReady(preset))
+            {
+                float prog01 = GetCooldownProgress01();
+                ThrottledCrackPreview(p, prog01);     // *** CHANGED *** throttled
+                return; // waiting for cooldown
+            }
+        }
+
+        // --------- FIRE (DESTRUCTIVE APPLY) ----------
+        if (IsToolReady(preset))
+        {
+            ApplyOperation(preset, snappedHoverPos);
+            BumpCooldown(preset);
+
+            // Require full charge before the NEXT shot (even while still holding)
+            if (preset.enableChargeHold)
+            {
+                _primedThisHold = false;
+                _holdStartTime  = Time.time;
+            }
+        }
+    }
+
+    // Called when the target world position changes
+    // *** CHANGED ***  No hover-only crack writes here; optionally reset only what’s necessary.
+    void ResetProgressOnTargetChange(Vector3 newTarget, bool isHeld)
+    {
+        // No preview writes here (was: SendCrackProgress(newTarget, 0f);)
+
+        // Restart charging state only if mouse is held; otherwise just clear pending state
+        if (isHeld)
+        {
+            _holdStartTime = Time.time;
+            _primedThisHold = !preset.enableChargeHold;
+        }
+        else
+        {
+            _holdStartTime = -1f;
+            _primedThisHold = false;
+        }
+
+        // Cooldown: optional reset on move. If this feels too punishing, remove this block.
+        if (preset != null)
+        {
+            float cd = Mathf.Max(0f, preset.cooldownSeconds);
+            if (cd > 0f)
+            {
+                float next = Time.time + cd;
+                if (_nextReadyTime.ContainsKey(preset)) _nextReadyTime[preset] = next;
+                else _nextReadyTime.Add(preset, next);
+            }
+            else
+            {
+                if (_nextReadyTime.ContainsKey(preset)) _nextReadyTime[preset] = Time.time;
+            }
+        }
+
+        // *** CHANGED *** Reset preview throttle anchors on move to avoid a burst
+        _lastPreviewPos = newTarget;
+        _lastPreviewTime = Time.time;
+    }
+
+    // Preview-only cracks (no iso change): strength=0, forceReplace=true
+    void SendCrackProgress(Vector3 worldPos, float progress01)
+    {
+        progress01 = Mathf.Clamp01(progress01);
+        terrain.EditSphere(worldPos, currentRadius, 0f, preset.fillType, progress01, false, true);
+    }
+
+    // *** CHANGED *** Throttled preview writer
+    void ThrottledCrackPreview(Vector3 worldPos, float progress01)
+    {
+        float now = Time.time;
+
+        // movement threshold scales with radius (prevents thrash at tiny jitters)
+        float moveThresh = Mathf.Max(0.002f, currentRadius * PREVIEW_MOVE_FRAC_OF_RADIUS);
+        if ((worldPos - _lastPreviewPos).sqrMagnitude < moveThresh * moveThresh &&
+            (now - _lastPreviewTime) < PREVIEW_MIN_INTERVAL)
+        {
+            return;
+        }
+
+        SendCrackProgress(worldPos, progress01);
+
+        _lastPreviewPos = worldPos;
+        _lastPreviewTime = now;
+    }
+
+    // ---------- cooldown helpers ----------
+    bool IsToolReady(TerrainToolPreset p)
+    {
+        if (!_nextReadyTime.TryGetValue(p, out float readyAt)) return true;
+        return Time.time >= readyAt;
+    }
+
+    void BumpCooldown(TerrainToolPreset p)
+    {
+        float cd = Mathf.Max(0f, p.cooldownSeconds);
+        float next = Time.time + cd;
+        if (_nextReadyTime.ContainsKey(p)) _nextReadyTime[p] = next;
+        else _nextReadyTime.Add(p, next);
     }
 
     // ---------- behavior ----------
@@ -123,15 +315,27 @@ public class TerrainTool : MonoBehaviour
                 if (p.shape == BrushShape.Sphere)
                 {
                     Vector3 pos = (p.anchored && hasAnchor) ? anchorPos : targetPos;
+
+                    // Clear preview first so it doesn't mask the real edit this frame
+                    SendCrackProgress(pos, 0f);
+
+                    // Visual debris
+                    PebbleSpawner.Instance?.SpawnPebbles(pos);
+
+                    // REAL edit: progress=0, forceReplace=false (destroys / modifies voxels)
                     if (GetTypeAnchorActive(p))
-                        EditSphereAt(pos, p.strength, true, anchoredBreakType);
+                        terrain.EditSphere(pos, currentRadius, p.strength, anchoredBreakType, 0f, true,  false);
                     else
-                        EditSphereAt(pos, p.strength, false, default);
+                        terrain.EditSphere(pos, currentRadius, p.strength, preset.fillType,     0f, false, false);
                 }
                 else
                 {
                     if (hasAnchor)
-                        EditCubeAt(anchorPos, currentBoxSize, cachedYawDegOrLive(p), p.strength);
+                    {
+                        float yaw = cachedYawDegOrLive(p);
+                        EditCubeAt(anchorPos, currentBoxSize, yaw, p.strength);
+                        PebbleSpawner.Instance?.SpawnPebbles(anchorPos);
+                    }
                 }
                 break;
             }
@@ -140,20 +344,20 @@ public class TerrainTool : MonoBehaviour
             {
                 if (p.shape == BrushShape.Sphere)
                 {
-                    Vector3 pos = (p.anchored && hasAnchor) ? anchorPos : targetPos;
-                    EditSphereAt(pos, Mathf.Abs(p.strength), false, default);
+                    Vector3 pos = (preset.anchored && hasAnchor) ? anchorPos : targetPos;
+                    // REAL build: progress=0, forceReplace=false
+                    terrain.EditSphere(pos, currentRadius, Mathf.Abs(p.strength), preset.fillType, 0f, false, false);
                 }
-                else
+                else if (hasAnchor)
                 {
-                    if (hasAnchor)
-                        EditCubeAt(anchorPos, currentBoxSize, cachedYawDegOrLive(p), Mathf.Abs(p.strength));
+                    EditCubeAt(anchorPos, currentBoxSize, cachedYawDegOrLive(p), Mathf.Abs(p.strength));
                 }
                 break;
             }
 
             case ToolOperation.Smooth:
             {
-                Vector3 pos = (p.anchored && hasAnchor) ? anchorPos : targetPos;
+                Vector3 pos = (preset.anchored && hasAnchor) ? anchorPos : targetPos;
                 terrain.SmoothSphere(pos, currentRadius, p.smoothStrength);
                 break;
             }
@@ -227,19 +431,15 @@ public class TerrainTool : MonoBehaviour
         }
         else
         {
-            // multiplicative uniform scaling (mouse wheel)
-            // delta is your "percent per tick": e.g. 0.1 => ±10% per tick (use Shift for fineMultiplier)
-            float scaleFactor = 1f + delta;                  // delta from above (scroll * step)
-            if (scaleFactor <= 0.0001f) scaleFactor = 0.0001f; // avoid flip/zero
+            float scaleFactor = 1f + delta;
+            if (scaleFactor <= 0.0001f) scaleFactor = 0.0001f;
 
             Vector3 target = currentBoxSize * scaleFactor;
 
-            // clamp per axis to preset bounds
             target.x = Mathf.Clamp(target.x, p.boxSizeMin.x, p.boxSizeMax.x);
             target.y = Mathf.Clamp(target.y, p.boxSizeMin.y, p.boxSizeMax.y);
             target.z = Mathf.Clamp(target.z, p.boxSizeMin.z, p.boxSizeMax.z);
 
-            // enforce positive minimum size
             target.x = Mathf.Max(0.01f, target.x);
             target.y = Mathf.Max(0.01f, target.y);
             target.z = Mathf.Max(0.01f, target.z);
@@ -247,16 +447,7 @@ public class TerrainTool : MonoBehaviour
             currentBoxSize = target;
         }
 
-
-        ApplyPresetVisuals(); // refresh preview
-    }
-
-    void EditSphereAt(Vector3 pos, float strength, bool useTypeConstraint, TerrainType typeIfConstrained)
-    {
-        if (useTypeConstraint)
-            terrain.EditSphere(pos, currentRadius, strength, typeIfConstrained, true);
-        else
-            terrain.EditSphere(pos, currentRadius, strength, preset.fillType);
+        ApplyPresetVisuals();
     }
 
     void EditCubeAt(Vector3 pos, Vector3 size, float yawDeg, float strength)
@@ -286,7 +477,7 @@ public class TerrainTool : MonoBehaviour
 
     void ApplyPresetVisuals()
     {
-        if (!brushRoot || preset == null) return;
+        if (!brushRoot || !preset) return;
 
         bool noOp = preset.operation == ToolOperation.None;
         ForceBrushHidden(noOp || preset.hideBrush);
@@ -331,26 +522,28 @@ public class TerrainTool : MonoBehaviour
 
     void SetBrushAlpha(float a)
     {
-        void MakeTransparent(MeshRenderer mr)
+        MakeTransparent(sphereVis?.GetComponent<MeshRenderer>(), a);
+        MakeTransparent(cubeVis?.GetComponent<MeshRenderer>(), a);
+    }
+
+    // *** CHANGED *** pulled out local function to avoid potential allocations
+    static void MakeTransparent(MeshRenderer mr, float a)
+    {
+        if (!mr || !mr.sharedMaterial) return;
+        var mat = mr.sharedMaterial;
+        if (!mat.HasProperty("_Color")) return;
+        var c = mat.color; c.a = Mathf.Clamp01(a);
+        mat.color = c;
+        if (a < 0.999f)
         {
-            if (!mr || !mr.sharedMaterial) return;
-            var mat = mr.sharedMaterial;
-            if (!mat.HasProperty("_Color")) return;
-            var c = mat.color; c.a = Mathf.Clamp01(a);
-            mat.color = c;
-            if (a < 0.999f)
-            {
-                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                mat.SetInt("_ZWrite", 0);
-                mat.DisableKeyword("_ALPHATEST_ON");
-                mat.EnableKeyword("_ALPHABLEND_ON");
-                mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
-            }
+            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetInt("_ZWrite", 0);
+            mat.DisableKeyword("_ALPHATEST_ON");
+            mat.EnableKeyword("_ALPHABLEND_ON");
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         }
-        MakeTransparent(sphereVis?.GetComponent<MeshRenderer>());
-        MakeTransparent(cubeVis?.GetComponent<MeshRenderer>());
     }
 
     void ForceBrushHidden(bool hide) => brushRoot?.SetActive(!hide && brushVisible);
@@ -392,13 +585,20 @@ public class TerrainTool : MonoBehaviour
         preset = p;
         hasAnchor = false;
         yawLocked = false;
+        _holdStartTime = -1f;
+        _primedThisHold = false;
+        _hadPrevTarget = false;
+
+        // *** CHANGED *** reset preview throttle state
+        _lastPreviewTime = -1f;
+
         PullSizesFromPreset();
         ApplyPresetVisuals();
     }
 
     void PullSizesFromPreset()
     {
-        if (preset == null) return;
+        if (!preset) return;
 
         float minR = Mathf.Max(0.01f, Mathf.Min(preset.sphereRadiusRange.x, preset.sphereRadiusRange.y));
         float maxR = Mathf.Max(minR, Mathf.Max(preset.sphereRadiusRange.x, preset.sphereRadiusRange.y));
@@ -442,16 +642,32 @@ public class TerrainTool : MonoBehaviour
     static float SnapAngle(float angleDeg, float stepDeg) => Mathf.Round(angleDeg / stepDeg) * stepDeg;
     static float NormalizeAngle360(float deg) { deg %= 360f; if (deg < 0f) deg += 360f; return deg; }
 
-    // Optional UI hooks
-    public void SetBrushVisible(bool vis)
+    // ---------- UI helpers ----------
+    public float GetChargeProgress01()
     {
-        brushVisible = vis;
-        ForceBrushHidden(preset == null || preset.hideBrush || !brushVisible || preset.operation == ToolOperation.None);
+        if (!preset) return 0f;
+        if (!preset.enableChargeHold) return 1f;
+        if (_holdStartTime < 0f) return 0f;
+        float need = Mathf.Max(0.0001f, preset.chargeTimeSeconds);
+        float t = Mathf.Clamp01((Time.time - _holdStartTime) / need);
+        return _primedThisHold ? 1f : t;
     }
-    public void SetSphereRadius(float r)  { currentRadius = Mathf.Max(0.01f, r); ApplyPresetVisuals(); }
-    public void SetBoxSize(Vector3 s)
+
+    public float GetCooldownRemainingSeconds()
     {
-        currentBoxSize = new(Mathf.Max(0.01f, s.x), Mathf.Max(0.01f, s.y), Mathf.Max(0.01f, s.z));
-        ApplyPresetVisuals();
+        if (!preset) return 0f;
+        if (!_nextReadyTime.TryGetValue(preset, out float readyAt)) return 0f;
+        return Mathf.Max(0f, readyAt - Time.time);
     }
+
+    public float GetCooldownProgress01()
+    {
+        if (!preset) return 1f;
+        float cd = Mathf.Max(0.0001f, preset.cooldownSeconds);
+        if (!_nextReadyTime.TryGetValue(preset, out float readyAt)) return 1f;
+        float remain = Mathf.Max(0f, readyAt - Time.time);
+        return Mathf.Clamp01(1f - remain / cd);
+    }
+
+    public bool IsReadyNow() => IsToolReady(preset);
 }

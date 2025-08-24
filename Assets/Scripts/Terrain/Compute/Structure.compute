@@ -4,12 +4,14 @@ struct Voxel
 {
     uint type;
     float iso;
+    float breakingProgress;
 };
 
 struct Vertex {
     float3 position;
     float3 normal;
     int data;
+    float breakingProgress;
 };
 struct Triangle {
     Vertex vertexC;

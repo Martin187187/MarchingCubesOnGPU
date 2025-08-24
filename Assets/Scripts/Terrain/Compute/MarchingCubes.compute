@@ -20,6 +20,12 @@ int type(Voxel v1, Voxel v2){
     }
     return v2.type;
 }
+float progress(Voxel v1, Voxel v2){
+	if(v1.iso>v2.iso){
+		return v1.breakingProgress;
+	}
+	return v2.breakingProgress;
+}
 int indexFromCoord(int3 v) {
     return v.z * numPointsPerAxis * numPointsPerAxis + v.y * numPointsPerAxis + v.x;
 }
@@ -72,6 +78,7 @@ Vertex createVertex(int3 coordA, int3 coordB, Voxel v1, Voxel v2) {
 	vertex.position = position;
     vertex.normal = normal;
     vertex.data = type(v1, v2);
+    vertex.breakingProgress = progress(v1, v2);
 	return vertex;
 }
 

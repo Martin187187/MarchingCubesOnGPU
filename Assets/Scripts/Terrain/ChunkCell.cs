@@ -43,6 +43,7 @@
 
         void Start()
         {
+            gameObject.layer = LayerMask.NameToLayer("Terrain");
             meshRenderer = gameObject.AddComponent<MeshRenderer>();
             meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.TwoSided;
             meshRenderer.receiveShadows = true;
@@ -50,6 +51,7 @@
 
             meshFilter = gameObject.AddComponent<MeshFilter>();
             meshCollider = gameObject.AddComponent<MeshCollider>();
+            
             foliageParent = transform;
             InitChunk();
         }
@@ -122,7 +124,7 @@
                         float isoValue = baseIso + sinOffset;
 
                         TerrainType type = (TerrainType)(isoValue < 0.47f ? (isoValue < 0.40f ? 2 : 1) : 0);
-                        voxelData[idx] = new Voxel(type, isoValue);
+                        voxelData[idx] = new Voxel(type, isoValue, 0);
                     }
                 }
             }
@@ -149,7 +151,7 @@
         // Back-compat: same signature you already call from elsewhere.
         public void UpdateVoxelGridWithSphere(
             Vector3 position, float radius, float strength, TerrainType terrainType,
-            Dictionary<TerrainType, int> inventory, bool doFallOff = true, bool oneBlockOnly = false)
+            Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool forceReplace = false)
         {
             UpdateVoxelGrid(
                 BrushShape.Sphere,
@@ -160,15 +162,17 @@
                 strength,
                 terrainType,
                 inventory,
+                breakingProgress,
                 doFallOff,
-                oneBlockOnly
+                oneBlockOnly,
+                forceReplace
             );
         }
 
 // New: oriented cube brush (halfExtents are in *grid* units, rotation in world/grid axes)
         public void UpdateVoxelGridWithCube(
             Vector3 center, Vector3 halfExtents, Quaternion rotation, float strength,
-            TerrainType terrainType, Dictionary<TerrainType, int> inventory, bool doFallOff = true, bool oneBlockOnly = false)
+            TerrainType terrainType, Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool forceReplace = false)
         {
             UpdateVoxelGrid(
                 BrushShape.Wall,
@@ -179,22 +183,30 @@
                 strength,
                 terrainType,
                 inventory,
+                breakingProgress,
                 doFallOff,
-                oneBlockOnly
+                oneBlockOnly,
+                forceReplace
             );
         }
         private void UpdateVoxelGrid(
-    BrushShape shape,
-    Vector3 centerGrid,                 // brush center in grid coords (same as before)
-    float radiusGrid,                   // for Sphere
-    Vector3 halfExtentsGrid,            // for Cube (XYZ half-sizes in grid coords)
-    Quaternion rotation,                // for Cube
-    float strength,
-    TerrainType fillType,               // use the type the caller asked for
-    Dictionary<TerrainType, int> inventory,
-    bool doFallOff = true, 
-    bool oneBlockOnly = false)
-{
+            BrushShape shape,
+            Vector3 centerGrid,                 // brush center in grid coords (same as before)
+            float radiusGrid,                   // for Sphere
+            Vector3 halfExtentsGrid,            // for Cube (XYZ half-sizes in grid coords)
+            Quaternion rotation,                // for Cube
+            float strength,
+            TerrainType fillType,               // use the type the caller asked for
+            Dictionary<TerrainType, int> inventory,
+            float breakingProgress = 0,
+            bool doFallOff = true, 
+            bool oneBlockOnly = false, 
+            bool forceReplace = false
+            )
+        {
+            // todo: this is a bit hacky
+        if (forceReplace)
+            strength = 0;
     // Safety helpers
     float SafeDiv(float a, float b) => a / (Mathf.Abs(b) < 1e-6f ? 1e-6f : b);
 
@@ -262,6 +274,7 @@
 
         if (inside)
         {
+            voxelData[idx].breakingProgress = breakingProgress * falloff;
             // Apply type on fill when crossing from "air" to "solid"
             if (strength > 0f && voxelData[idx].iso <= 0.5f)
                 voxelData[idx].type = fillType;
@@ -275,7 +288,7 @@
             
             float oldIso = voxelData[idx].iso;
             if (voxelData[idx].type != default)
-            voxelData[idx].iso = Mathf.Clamp(voxelData[idx].iso + strength * falloff, 0f, 1f);
+                voxelData[idx].iso = Mathf.Clamp(voxelData[idx].iso + strength * falloff, 0f, 1f);
 
             // Inventory bookkeeping when crossing iso threshold
             if (strength > 0f)
@@ -460,9 +473,11 @@ public void SmoothSphere(Vector3 centerGrid, float radiusGrid, float strength, b
             var normals = new Vector3[numTris * 3];
             var meshTriangles = new int[numTris * 3];
             var uvs1 = new Vector3[numTris * 3];
+            var uvs2 = new Vector3[numTris * 3];
             var colors = new Color[numTris * 3];
 
             int[] type = new int[3];
+            float[] progress = new float[3];
             Color[] blend = new Color[]
             {
                 new Color(1f, 0f, 0f),
@@ -486,6 +501,7 @@ public void SmoothSphere(Vector3 centerGrid, float radiusGrid, float strength, b
                     normals[vi] = vert.normal;
 
                     type[j] = vert.data;
+                    progress[j] = vert.breakingProgress;
 
                     if (!foliageInitialized && vert.data == (int)TerrainType.Grass)
                     {
@@ -506,6 +522,7 @@ public void SmoothSphere(Vector3 centerGrid, float radiusGrid, float strength, b
                 {
                     int vi = i * 3 + j;
                     uvs1[vi] = new Vector3(type[0], type[1], type[2]);
+                    uvs2[vi] = new Vector3(progress[0], progress[1], progress[2]);
                     colors[vi] = blend[j];
                 }
             }
@@ -523,6 +540,7 @@ public void SmoothSphere(Vector3 centerGrid, float radiusGrid, float strength, b
             mesh.triangles = meshTriangles;
             mesh.colors = colors;
             mesh.SetUVs(2, new System.Collections.Generic.List<Vector3>(uvs1));
+            mesh.SetUVs(3, new System.Collections.Generic.List<Vector3>(uvs2));
 
             meshFilter.mesh = mesh;
             meshCollider.sharedMesh = mesh;
@@ -648,17 +666,20 @@ public void SmoothSphere(Vector3 centerGrid, float radiusGrid, float strength, b
             public Vector3 position;
             public Vector3 normal;
             public int data; // terrain type id
+            public float breakingProgress;
         }
 
         struct Voxel
         {
             public TerrainType type;
             public float iso;
+            public float breakingProgress;
 
-            public Voxel(TerrainType type, float iso)
+            public Voxel(TerrainType type, float iso, float breakingProgress)
             {
                 this.type = type;
                 this.iso = iso;
+                this.breakingProgress = breakingProgress;
             }
         }
     }

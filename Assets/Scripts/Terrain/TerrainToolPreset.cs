@@ -35,7 +35,7 @@ public class TerrainToolPreset : ScriptableObject
     [Header("Placement / Anchoring")]
     public bool anchored = true;
     public bool lockYawWhileActive = true;
-    public bool hideBrush = false; // ignored if operation == None (indicator always hidden)
+    public bool hideBrush = false; // ignored if operation == None
 
     [Header("Snapping permissions")]
     public bool allowPositionSnap = true;
@@ -46,4 +46,17 @@ public class TerrainToolPreset : ScriptableObject
 
     [Header("Build material (Build only)")]
     public TerrainType fillType = TerrainType.Beton;
+
+    // -------- Charge + Cooldown --------
+    [Header("Charge & Cooldown")]
+    [Tooltip("Require holding LMB for a duration before the first shot.")]
+    public bool enableChargeHold = false;
+
+    [Min(0f)]
+    [Tooltip("Seconds you must hold before the FIRST fire (if enabled).")]
+    public float chargeTimeSeconds = 0.25f;
+
+    [Min(0f)]
+    [Tooltip("Seconds between fires while the button remains held.")]
+    public float cooldownSeconds = 0.08f;
 }
