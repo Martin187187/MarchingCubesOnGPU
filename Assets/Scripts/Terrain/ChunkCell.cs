@@ -171,11 +171,11 @@ public class ChunkCell : MonoBehaviour
     // -------------------- EDIT API (SPHERE / CUBE) --------------------
 
     // Break/build preview should pass forceReplace=true (only writes breakingProgress)
-    public void UpdateVoxelGridWithSphere(
+    public Dictionary<TerrainType, int> UpdateVoxelGridWithSphere(
         Vector3 position, float radius, float strength, TerrainType terrainType,
         Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool forceReplace = false)
     {
-        UpdateVoxelGrid(
+        return UpdateVoxelGrid(
             BrushShape.Sphere,
             position,
             radius,
@@ -191,11 +191,11 @@ public class ChunkCell : MonoBehaviour
         );
     }
 
-    public void UpdateVoxelGridWithCube(
+    public Dictionary<TerrainType, int> UpdateVoxelGridWithCube(
         Vector3 center, Vector3 halfExtents, Quaternion rotation, float strength,
         TerrainType terrainType, Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool forceReplace = false)
     {
-        UpdateVoxelGrid(
+        return UpdateVoxelGrid(
             BrushShape.Wall,
             center,
             0f,
@@ -211,7 +211,7 @@ public class ChunkCell : MonoBehaviour
         );
     }
 
-    private void UpdateVoxelGrid(
+    private Dictionary<TerrainType, int> UpdateVoxelGrid(
         BrushShape shape,
         Vector3 centerGrid,
         float radiusGrid,
@@ -226,7 +226,8 @@ public class ChunkCell : MonoBehaviour
         bool forceReplace = false
     )
     {
-        if (voxelData == null || voxelData.Length == 0) return;
+        Dictionary<TerrainType, int> blocks = new Dictionary<TerrainType, int>();
+        if (voxelData == null || voxelData.Length == 0) return blocks;
 
         bool previewOnly = forceReplace; // preview fast path: only breakingProgress
 
@@ -304,20 +305,25 @@ public class ChunkCell : MonoBehaviour
                 // Inventory transitions at iso 0.5
                 if (inventory != null)
                 {
+                    TerrainType type = voxelData[idx].type;
                     if (strength > 0f)
                     {
                         if (oldIso <= 0.5f && voxelData[idx].iso >= 0.5f)
                         {
-                            if (!inventory.ContainsKey(voxelData[idx].type)) inventory[voxelData[idx].type] = 0;
-                            inventory[voxelData[idx].type]--;
+                            if (!inventory.ContainsKey(type)) inventory[type] = 0;
+                                inventory[type]--;
+                            if (!blocks.ContainsKey(type)) blocks[type] = 0;
+                                blocks[type]--;
                         }
                     }
                     else if (strength < 0f)
                     {
                         if (oldIso >= 0.5f && voxelData[idx].iso <= 0.5f)
                         {
-                            if (!inventory.ContainsKey(voxelData[idx].type)) inventory[voxelData[idx].type] = 0;
-                            inventory[voxelData[idx].type]++;
+                            if (!inventory.ContainsKey(type)) inventory[type] = 0;
+                                inventory[type]++;
+                            if (!blocks.ContainsKey(type)) blocks[type] = 0;
+                                blocks[type]++;
                         }
                     }
                 }
@@ -335,6 +341,8 @@ public class ChunkCell : MonoBehaviour
             else
                 RemoveFoliageInsideBox(centerGrid, halfExtentsGrid, rotation);
         }
+
+        return blocks;
     }
 
     // ---- SMOOTHING (sphere) ----  (full-grid upload)

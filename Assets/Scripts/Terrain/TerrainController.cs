@@ -121,12 +121,10 @@ public class TerrainController : MonoBehaviour
         if (cx < 0 || cy < 0 || cz < 0 ||
             cx >= numberOfChunks.x || cy >= numberOfChunks.y || cz >= numberOfChunks.z)
             return default;
-        Debug.Log("passed bound check");
 
         ChunkCell chunk = chunkMatrix[cx, cy, cz];
         if (chunk == null) return default;
 
-        Debug.Log("passed chunk check");
         // Local position inside that chunk (0..chunkSize)
         Vector3 chunkOriginLocal = new Vector3(
             (cx - half.x) * chunkSize,
@@ -142,21 +140,33 @@ public class TerrainController : MonoBehaviour
     /// Sphere operation. Positive strength builds, negative breaks.
     /// radiusWorld is in world units.
     /// </summary>
-    public void EditSphere(Vector3 centerWorld, float radiusWorld, float strengthWorld, TerrainType fillType, float breakingProgress = 0, bool forceSameBlock = false, bool forceReplace = false)
+    public Dictionary<TerrainType, int> EditSphere(Vector3 centerWorld, float radiusWorld, float strengthWorld, TerrainType fillType, float breakingProgress = 0, bool forceSameBlock = false, bool forceReplace = false)
     {
         Vector3 centerGrid = centerWorld * (gridSize - 3f) / chunkSize;
         float radiusGrid = radiusWorld * (gridSize - 3f) / chunkSize;
+        
+        Dictionary<TerrainType, int> totalChanges = new Dictionary<TerrainType, int>();
         ApplyToAffectedChunks(centerGrid, radiusGrid, (chunk, localCenter) =>
         {
-            chunk.UpdateVoxelGridWithSphere(localCenter, radiusGrid / 2f, strengthWorld * (gridSize - 3f) / chunkSize, fillType, inventory, breakingProgress, true, forceSameBlock, forceReplace);
+            Dictionary<TerrainType, int> chunkResult = chunk.UpdateVoxelGridWithSphere(localCenter, radiusGrid / 2f, strengthWorld * (gridSize - 3f) / chunkSize, fillType, inventory, breakingProgress, true, forceSameBlock, forceReplace);
+            
+            // Merge the result into the totalChanges dictionary
+            foreach (var kvp in chunkResult)
+            {
+                if (totalChanges.ContainsKey(kvp.Key))
+                    totalChanges[kvp.Key] += kvp.Value;
+                else
+                    totalChanges[kvp.Key] = kvp.Value;
+            }
         });
+        return totalChanges;
     }
 
     /// <summary>
     /// Box operation. Positive strength builds, negative breaks.
     /// sizeWorld is full extents (scale) in world units. rotationWorld is world rotation for the box.
     /// </summary>
-    public void EditCube(Vector3 centerWorld, Vector3 sizeWorld, Quaternion rotationWorld, float strengthWorld, TerrainType fillType, float breakingProgress = 0, bool forceReplace = false)
+    public Dictionary<TerrainType, int> EditCube(Vector3 centerWorld, Vector3 sizeWorld, Quaternion rotationWorld, float strengthWorld, TerrainType fillType, float breakingProgress = 0, bool forceReplace = false)
     {
         // Convert world center to grid for chunk-local addressing.
         Vector3 centerGrid = centerWorld * (gridSize - 3f) / chunkSize;
@@ -166,17 +176,26 @@ public class TerrainController : MonoBehaviour
         // We keep that behavior: we pass sizeWorld & rotationWorld through.
         float radiusForAABB = Mathf.Max(sizeWorld.x, Mathf.Max(sizeWorld.y, sizeWorld.z)) ;
         float radiusGrid = radiusForAABB * (gridSize - 3f) / chunkSize;
-
+        Dictionary<TerrainType, int> totalChanges = new Dictionary<TerrainType, int>();
         ApplyToAffectedChunks(centerGrid, radiusGrid, (chunk, localCenter) =>
         {
-            chunk.UpdateVoxelGridWithCube(
+            Dictionary<TerrainType, int> chunkResult = chunk.UpdateVoxelGridWithCube(
                 localCenter,
                 sizeWorld,              // keep as world units to match your existing chunk API
                 rotationWorld,
                 strengthWorld * (gridSize - 3f) / chunkSize,
                 fillType,
                 inventory, breakingProgress, false, false, forceReplace);
+            // Merge the result into the totalChanges dictionary
+            foreach (var kvp in chunkResult)
+            {
+                if (totalChanges.ContainsKey(kvp.Key))
+                    totalChanges[kvp.Key] += kvp.Value;
+                else
+                    totalChanges[kvp.Key] = kvp.Value;
+            }
         });
+        return totalChanges;
     }
 
     /// <summary>

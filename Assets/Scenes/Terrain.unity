@@ -1216,6 +1216,8 @@ MonoBehaviour:
   launchForce: 3
   upBias: 0.5
   lifetime: 10
+  terrainTextures: {fileID: -7639397621201060638, guid: e926f45bb74fa074e9e50ffae6b21b37, type: 3}
+  pebbleBaseMaterial: {fileID: 2100000, guid: 89ddf6e52e7a2f441aede2d38a02c70c, type: 2}
 --- !u!4 &1885946314
 Transform:
   m_ObjectHideFlags: 0

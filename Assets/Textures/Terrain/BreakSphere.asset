@@ -17,7 +17,7 @@ MonoBehaviour:
   strength: -0.5
   smoothStrength: 0.02
   shape: 0
-  sphereRadius: 4
+  sphereRadius: 3
   boxSize: {x: 6, y: 0.3, z: 6}
   sphereRadiusRange: {x: 1, y: 8}
   boxSizeMin: {x: 0.1, y: 0.1, z: 0.1}

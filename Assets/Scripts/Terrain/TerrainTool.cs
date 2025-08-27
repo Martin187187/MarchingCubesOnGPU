@@ -319,22 +319,23 @@ public class TerrainTool : MonoBehaviour
                     // Clear preview first so it doesn't mask the real edit this frame
                     SendCrackProgress(pos, 0f);
 
-                    // Visual debris
-                    PebbleSpawner.Instance?.SpawnPebbles(pos);
 
-                    // REAL edit: progress=0, forceReplace=false (destroys / modifies voxels)
+                    Dictionary<TerrainType, int> changes;
                     if (GetTypeAnchorActive(p))
-                        terrain.EditSphere(pos, currentRadius, p.strength, anchoredBreakType, 0f, true,  false);
+                        changes = terrain.EditSphere(pos, currentRadius, p.strength, anchoredBreakType, 0f, true,  false);
                     else
-                        terrain.EditSphere(pos, currentRadius, p.strength, preset.fillType,     0f, false, false);
+                        changes = terrain.EditSphere(pos, currentRadius, p.strength, preset.fillType);
+                    // Visual debris
+                    PebbleSpawner.Instance?.SpawnPebbles(pos, changes);
                 }
                 else
                 {
                     if (hasAnchor)
                     {
+                        Dictionary<TerrainType, int> changes = new Dictionary<TerrainType, int>();
                         float yaw = cachedYawDegOrLive(p);
                         EditCubeAt(anchorPos, currentBoxSize, yaw, p.strength);
-                        PebbleSpawner.Instance?.SpawnPebbles(anchorPos);
+                        PebbleSpawner.Instance?.SpawnPebbles(anchorPos, changes);
                     }
                 }
                 break;
