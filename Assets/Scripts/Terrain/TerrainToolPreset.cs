@@ -39,6 +39,8 @@ public class TerrainToolPreset : ScriptableObject
 
     [Header("Snapping permissions")]
     public bool allowPositionSnap = true;
+
+    public float snapFactor = 1.0f;
     public bool allowYawSnap = true;
 
     [Header("Type anchor (Break only)")]

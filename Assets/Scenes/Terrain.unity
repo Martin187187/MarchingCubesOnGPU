@@ -402,16 +402,26 @@ MonoBehaviour:
   - {fileID: 2100000, guid: a64209fa4efbaa548941915bf216a848, type: 2}
   marchingCubesShader: {fileID: 7200000, guid: 4d5abe35a90c41099f8860b5b4a1b6bf, type: 3}
   noiseShader: {fileID: 7200000, guid: c79b902e95db45fca7919f163758f6ac, type: 3}
-  numberOfChunks: {x: 10, y: 4, z: 10}
-  gridSize: 32
-  chunkSize: 16
-  isoLevel: 0.5
   terrainLayers:
   - {fileID: 11400000, guid: cf0d78863493e294d867cfc03cc4fd9c, type: 2}
   - {fileID: 11400000, guid: 04ae161364e78e2438f09eddb852e26e, type: 2}
   - {fileID: 11400000, guid: 82e69832a1c6d0643baf913fec45237e, type: 2}
   - {fileID: 11400000, guid: b23933f3e12e842419d73067e111b946, type: 2}
   - {fileID: 11400000, guid: e1af475f9860b074c88773032a3c4a1e, type: 2}
+  gridSize: 32
+  chunkSize: 16
+  isoLevel: 0.5
+  player: {fileID: 140985713}
+  viewRadiusChunks: 6
+  verticalRadiusChunks: 2
+  unloadHysteresis: 1
+  colliderRadiusChunks: 3
+  wantedUpdateInterval: 0.25
+  budgetDensityPerFrame: 2
+  budgetMeshPerFrame: 8
+  budgetColliderPromotionsPerFrame: 2
+  prewarmChunks: 64
+  maxChunks: 512
   foliagePrefabs:
   - {fileID: 4025988222033845712, guid: 1f9036ec905b920479091aca9ba81305, type: 3}
   - {fileID: 3731095390187986728, guid: 04054a3651be51d4193414f850cf6bde, type: 3}
@@ -427,8 +437,6 @@ MonoBehaviour:
   tiltJitterDeg: 4
   positionJitter: 0.05
   uniformScaleRange: {x: 0.8, y: 1.2}
-  refreshInterval: 0.001
-  maxParallelJobs: 8
   terrainType: 0
 --- !u!114 &628767259
 MonoBehaviour:

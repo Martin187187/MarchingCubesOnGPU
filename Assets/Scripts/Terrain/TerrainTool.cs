@@ -124,7 +124,7 @@ public class TerrainTool : MonoBehaviour
 
         // Snapping
         (bool posSnap, bool yawSnap) = GetSnapActive(preset);
-        Vector3 snappedHoverPos = posSnap ? terrain.SnapToGrid(hoverPos) : hoverPos;
+        Vector3 snappedHoverPos = posSnap ? terrain.SnapToGrid(hoverPos, preset.snapFactor) : hoverPos;
 
         // Determine the current target (respect anchoring)
         Vector3 currentTarget = (preset.anchored && hasAnchor) ? anchorPos : snappedHoverPos;

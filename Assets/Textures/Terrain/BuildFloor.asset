@@ -20,14 +20,16 @@ MonoBehaviour:
   sphereRadius: 2
   boxSize: {x: 6, y: 1, z: 6}
   sphereRadiusRange: {x: 0.1, y: 12}
-  boxSizeMin: {x: 3, y: 0.5, z: 3}
-  boxSizeMax: {x: 12, y: 2, z: 12}
+  boxSizeMin: {x: 3, y: 1, z: 3}
+  boxSizeMax: {x: 12, y: 1, z: 12}
   anchored: 1
-  lockYawWhileActive: 1
+  lockYawWhileActive: 0
   hideBrush: 0
   allowPositionSnap: 1
+  snapFactor: 4
   allowYawSnap: 1
   allowTypeAnchor: 0
   fillType: 5
   enableChargeHold: 0
   chargeTimeSeconds: 0.25
+  cooldownSeconds: 0.08

@@ -2,28 +2,58 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.Diagnostics; // Stopwatch
 
+/// <summary>
+/// Pool-friendly, reusable chunk cell.
+/// Heavy work is opt-in via explicit calls (no implicit work in Start/OnEnable).
+/// Controller is responsible for staging: density -> mesh -> collider -> foliage.
+/// </summary>
 public class ChunkCell : MonoBehaviour
 {
-    public Vector3Int index;
-    public int gridSize = 10;
-    public int chunkSize = 16;
-    public float isoLevel = 0.5f;
+    // -------------------- CONFIG TYPES --------------------
+    [System.Serializable]
+    public struct ChunkSettings
+    {
+        public int gridSize;     // voxels per edge (including padding)
+        public int chunkSize;    // world units per edge
+        public float isoLevel;
+    }
 
-    private Voxel[] voxelData;
+    [System.Serializable]
+    public struct FoliageSettings
+    {
+        public GameObject[] prefabs;
+        public float maxSlopeDeg;
+        public float targetsPerArea;
+        [Range(0f, 360f)] public float yawJitterDeg;
+        [Range(0f, 20f)]  public float tiltJitterDeg;
+        public float positionJitter;
+        public Vector2 uniformScaleRange;
+    }
 
-    public ComputeShader marchingCubesShader;
-    public ComputeShader noiseShader;
+    // -------------------- PUBLIC STATE --------------------
+    public Vector3Int Index { get; private set; }
+    public ChunkSettings Settings { get; private set; }
 
-    private ComputeBuffer triangleBuffer;
-    private ComputeBuffer counterBuffer;
-    private ComputeBuffer voxelBuffer;
+    public List<TerrainNoiseProfile> TerrainLayers { get; private set; }
 
-    public Material[] materialInstances;
-    private MeshRenderer meshRenderer;
-    private MeshFilter meshFilter;
-    private MeshCollider meshCollider;
+    public ComputeShader MarchingCubesShader { get; private set; }
+    public ComputeShader NoiseShader { get; private set; }
+    public Material[] MaterialInstances { get; private set; }
 
-    // Single, reusable mesh + reusable temp lists (avoid churn)
+    public Transform FoliageParent { get; private set; }
+
+    // -------------------- RUNTIME BUFFERS --------------------
+    private Voxel[] _voxelData;                       
+    private ComputeBuffer _triangleBuffer;            
+    private ComputeBuffer _counterBuffer;             
+    private ComputeBuffer _voxelBuffer;               
+
+    // Rendering components
+    private MeshRenderer _meshRenderer;
+    private MeshFilter   _meshFilter;
+    private MeshCollider _meshCollider;
+
+    // Reusable mesh + temp lists
     private Mesh _mesh;
     private readonly List<Vector3> _verts = new();
     private readonly List<Vector3> _norms = new();
@@ -32,145 +62,162 @@ public class ChunkCell : MonoBehaviour
     private readonly List<Vector3> _uvs3 = new(); // breakingProgress triplet
     private readonly List<Color> _cols = new();
 
-    public List<TerrainNoiseProfile> terrainLayers;
+    // Foliage
+    private FoliageSettings _foliage;
+    private bool _foliageInitialized = false;
 
-    // ---------------- FOLIAGE CONFIG ----------------
-    [Header("Foliage")]
-    public GameObject[] foliagePrefabs;
-    public float foliageMaxSlopeDeg = 25f;
-    public float foliageTargetsPerArea = 10f;
-    [Range(0f, 360f)] public float yawJitterDeg = 360f;
-    [Range(0f, 20f)] public float tiltJitterDeg = 4f;
-    public float positionJitter = 0.05f;
-    public Vector2 uniformScaleRange = new Vector2(0.9f, 1.1f);
-    public Transform foliageParent;
-
-    private bool foliageInitialized = false;
-
-    void Start()
+    // -------------------- LIFECYCLE (POOL-FRIENDLY) --------------------
+    /// <summary>
+    /// One-time component setup. Call once after Instantiate (when creating the pool).
+    /// </summary>
+    public void Initialize(Material[] materials,
+                           ComputeShader marchingCubes,
+                           ComputeShader noise,
+                           List<TerrainNoiseProfile> terrainLayers,
+                           FoliageSettings foliageDefaults)
     {
+        MaterialInstances = materials;
+        MarchingCubesShader = marchingCubes;
+        NoiseShader = noise;
+        TerrainLayers = terrainLayers;
+        _foliage = foliageDefaults;
+
         gameObject.layer = LayerMask.NameToLayer("Terrain");
 
-        meshRenderer = gameObject.AddComponent<MeshRenderer>();
-        meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.TwoSided;
-        meshRenderer.receiveShadows = true;
-        meshRenderer.materials = materialInstances;
+        _meshRenderer = gameObject.GetComponent<MeshRenderer>();
+        if (_meshRenderer == null) _meshRenderer = gameObject.AddComponent<MeshRenderer>();
+        _meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.TwoSided;
+        _meshRenderer.receiveShadows = true;
+        _meshRenderer.materials = MaterialInstances;
 
-        meshFilter = gameObject.AddComponent<MeshFilter>();
-        meshCollider = gameObject.AddComponent<MeshCollider>();
+        _meshFilter = gameObject.GetComponent<MeshFilter>();
+        if (_meshFilter == null) _meshFilter = gameObject.AddComponent<MeshFilter>();
 
-        foliageParent = transform;
+        _meshCollider = gameObject.GetComponent<MeshCollider>();
+        if (_meshCollider == null) _meshCollider = gameObject.AddComponent<MeshCollider>();
 
-        // Create one dynamic mesh and reuse it forever
-        _mesh = new Mesh();
-        _mesh.MarkDynamic();
-        meshFilter.sharedMesh = _mesh;
-        meshCollider.sharedMesh = _mesh;
+        if (_mesh == null)
+        {
+            _mesh = new Mesh();
+            _mesh.MarkDynamic();
+        }
+        _meshFilter.sharedMesh = _mesh;
+        _meshCollider.sharedMesh = _mesh;
 
-        InitChunk();
+        if (FoliageParent == null) FoliageParent = transform;
+
+        // start disabled; controller will activate after ResetFor
+        gameObject.SetActive(false);
     }
 
-    public void InitChunk()
+    /// <summary>
+    /// Prepare this chunk for a new location/index. Does NOT generate anything yet.
+    /// Use this when spawning or reusing from pool.
+    /// </summary>
+    public void ResetFor(Vector3Int index, Vector3 worldPosition, ChunkSettings settings,
+                         FoliageSettings? foliageOverride = null)
     {
-        int voxelGridSize = gridSize * gridSize * gridSize;
-        voxelData = new Voxel[voxelGridSize];
+        Index = index;
+        Settings = settings;
+        if (foliageOverride.HasValue) _foliage = foliageOverride.Value;
 
-        // (Re)create compute buffers for this grid size
-        ReleaseBuffers();
+        transform.position = worldPosition;          // world-space placement
 
-        triangleBuffer = new ComputeBuffer(voxelGridSize * 5, System.Runtime.InteropServices.Marshal.SizeOf(typeof(Triangle)), ComputeBufferType.Append);
-        counterBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
-        voxelBuffer = new ComputeBuffer(voxelGridSize, System.Runtime.InteropServices.Marshal.SizeOf(typeof(Voxel)));
+        EnsureBuffersForGridSize(Settings.gridSize);
+        ClearMeshAndFoliage();
+        if (_meshRenderer) _meshRenderer.enabled = false;
 
-        foreach (TerrainNoiseProfile layer in terrainLayers)
-            GenerateGPUVoxels(layer);
+        int voxelGridSize = Settings.gridSize * Settings.gridSize * Settings.gridSize;
+        if (_voxelData == null || _voxelData.Length != voxelGridSize)
+            _voxelData = new Voxel[voxelGridSize];
+        else
+            System.Array.Clear(_voxelData, 0, _voxelData.Length); // zero CPU mirror
+
+        // zero GPU buffer once so noise kernel can't accidentally blend with old data
+        if (_voxelBuffer != null) _voxelBuffer.SetData(_voxelData);
+
+        _foliageInitialized = false;
     }
 
-    void OnDestroy()
+    /// <summary>Release GPU buffers and mesh. Call only when destroying the pool altogether.</summary>
+    public void DisposeAll()
     {
         ReleaseBuffers();
-
-        // Explicitly destroy the mesh (native memory), collider will release cooked data
-        if (meshCollider) meshCollider.sharedMesh = null;
+        if (_meshCollider) _meshCollider.sharedMesh = null;
         if (_mesh) Destroy(_mesh);
+        _mesh = null;
     }
 
-    private void ReleaseBuffers()
+    // -------------------- DENSITY GENERATION --------------------
+    public void GenerateVoxelsGPU_AllLayers()
     {
-        if (triangleBuffer != null) { triangleBuffer.Release(); triangleBuffer = null; }
-        if (counterBuffer != null) { counterBuffer.Release(); counterBuffer = null; }
-        if (voxelBuffer != null) { voxelBuffer.Release(); voxelBuffer = null; }
+        foreach (var layer in TerrainLayers)
+            GenerateVoxelsGPU_Layer(layer);
+
+        // Keep a CPU mirror for edits/sampling
+        _voxelBuffer.GetData(_voxelData);
     }
 
-    public void GenerateGPUVoxels(TerrainNoiseProfile layer)
+    public void GenerateVoxelsGPU_Layer(TerrainNoiseProfile layer)
     {
-        int kernelIndex = noiseShader.FindKernel("Density");
-        noiseShader.SetVector("chunkPosition", new Vector4(transform.position.x, transform.position.y, transform.position.z));
-        noiseShader.SetFloat("isoLevel", isoLevel);
-        noiseShader.SetBuffer(kernelIndex, "voxels", voxelBuffer);
-        noiseShader.SetInt("numPointsPerAxis", gridSize);
-        noiseShader.SetFloat("chunkSize", chunkSize);
-        noiseShader.SetVector("offset", new Vector4(layer.offset.x, layer.offset.y, layer.offset.z));
-        noiseShader.SetInt("octaves", layer.octaves);
-        noiseShader.SetFloat("lacunarity", layer.lacunarity);
-        noiseShader.SetFloat("persistence", layer.persistence);
-        noiseShader.SetFloat("noiseScale", layer.noiseScale);
-        noiseShader.SetFloat("noiseWeight", layer.noiseWeight);
-        noiseShader.SetFloat("floorOffset", layer.floorOffset);
-        noiseShader.SetFloat("weightMultiplier", layer.weightMultiplier);
-        noiseShader.SetFloat("hardFloor", layer.hardFloor);
-        noiseShader.SetFloat("hardFloorWeight", layer.hardFloorWeight);
-        noiseShader.SetInt("val", (int)layer.type);
+        int gridSize = Settings.gridSize;
+        int kernelIndex = NoiseShader.FindKernel("Density");
+        NoiseShader.SetVector("chunkPosition", new Vector4(transform.position.x, transform.position.y, transform.position.z));
+        NoiseShader.SetFloat("isoLevel", Settings.isoLevel);
+        NoiseShader.SetBuffer(kernelIndex, "voxels", _voxelBuffer);
+        NoiseShader.SetInt("numPointsPerAxis", gridSize);
+        NoiseShader.SetFloat("chunkSize", Settings.chunkSize);
+        NoiseShader.SetVector("offset", new Vector4(layer.offset.x, layer.offset.y, layer.offset.z));
+        NoiseShader.SetInt("octaves", layer.octaves);
+        NoiseShader.SetFloat("lacunarity", layer.lacunarity);
+        NoiseShader.SetFloat("persistence", layer.persistence);
+        NoiseShader.SetFloat("noiseScale", layer.noiseScale);
+        NoiseShader.SetFloat("noiseWeight", layer.noiseWeight);
+        NoiseShader.SetFloat("floorOffset", layer.floorOffset);
+        NoiseShader.SetFloat("weightMultiplier", layer.weightMultiplier);
+        NoiseShader.SetFloat("hardFloor", layer.hardFloor);
+        NoiseShader.SetFloat("hardFloorWeight", layer.hardFloorWeight);
+        NoiseShader.SetInt("val", (int)layer.type);
 
-        noiseShader.Dispatch(kernelIndex, Mathf.Max(1, gridSize / 4), Mathf.Max(1, gridSize / 4), Mathf.Max(1, gridSize / 4));
-        voxelBuffer.GetData(voxelData);
+        int groups = Mathf.Max(1, gridSize / 4);
+        NoiseShader.Dispatch(kernelIndex, groups, groups, groups);
     }
 
-    public void GenerateCPUVoxels()
+    public void GenerateVoxelsCPU_Debug()
     {
+        int gridSize = Settings.gridSize;
         float amplitude = 2f;
         float frequency = 5f * Mathf.PI / (float)(gridSize - 3);
-        float spacing = chunkSize / (float)(gridSize - 3);
+        float spacing = Settings.chunkSize / (float)(gridSize - 3);
 
         for (int z = 0; z < gridSize; z++)
+        for (int y = 0; y < gridSize; y++)
+        for (int x = 0; x < gridSize; x++)
         {
-            for (int y = 0; y < gridSize; y++)
-            {
-                for (int x = 0; x < gridSize; x++)
-                {
-                    int idx = x + y * gridSize + z * gridSize * gridSize;
-
-                    Vector3 voxelWorldPos = transform.position + new Vector3(x, y, z) * spacing + Vector3.down * 20;
-                    float baseIso = voxelWorldPos.y - voxelWorldPos.x * 0.5f;
-                    float sinOffset = Mathf.Sin(voxelWorldPos.x * frequency) * amplitude;
-                    float isoValue = baseIso + sinOffset;
-
-                    TerrainType type = (TerrainType)(isoValue < 0.47f ? (isoValue < 0.40f ? 2 : 1) : 0);
-                    voxelData[idx] = new Voxel(type, isoValue, 0);
-                }
-            }
+            int idx = x + y * gridSize + z * gridSize * gridSize;
+            Vector3 voxelWorldPos = transform.position + new Vector3(x, y, z) * spacing + Vector3.down * 20;
+            float baseIso = voxelWorldPos.y - voxelWorldPos.x * 0.5f;
+            float sinOffset = Mathf.Sin(voxelWorldPos.x * frequency) * amplitude;
+            float isoValue = baseIso + sinOffset;
+            TerrainType type = (TerrainType)(isoValue < 0.47f ? (isoValue < 0.40f ? 2 : 1) : 0);
+            _voxelData[idx] = new Voxel(type, isoValue, 0);
         }
-
-        voxelBuffer.SetData(voxelData);
+        _voxelBuffer.SetData(_voxelData);
     }
 
+    // -------------------- QUERY --------------------
     public TerrainType GetTerrainTypeAtLocal(Vector3 localPos)
     {
-        if (voxelData == null || voxelData.Length == 0) return default;
-
-        float toGrid = (gridSize - 3f) / Mathf.Max(1f, (float)chunkSize);
-
-        int x = Mathf.Clamp(Mathf.RoundToInt(localPos.x * toGrid), 0, gridSize - 1);
-        int y = Mathf.Clamp(Mathf.RoundToInt(localPos.y * toGrid), 0, gridSize - 1);
-        int z = Mathf.Clamp(Mathf.RoundToInt(localPos.z * toGrid), 0, gridSize - 1);
-
-        int idx = x + y * gridSize + z * gridSize * gridSize;
-        return voxelData[idx].type;
+        if (_voxelData == null || _voxelData.Length == 0) return default;
+        float toGrid = (Settings.gridSize - 3f) / Mathf.Max(1f, (float)Settings.chunkSize);
+        int x = Mathf.Clamp(Mathf.RoundToInt(localPos.x * toGrid), 0, Settings.gridSize - 1);
+        int y = Mathf.Clamp(Mathf.RoundToInt(localPos.y * toGrid), 0, Settings.gridSize - 1);
+        int z = Mathf.Clamp(Mathf.RoundToInt(localPos.z * toGrid), 0, Settings.gridSize - 1);
+        int idx = x + y * Settings.gridSize + z * Settings.gridSize * Settings.gridSize;
+        return _voxelData[idx].type;
     }
 
-    // -------------------- EDIT API (SPHERE / CUBE) --------------------
-
-    // Break/build preview should pass forceReplace=true (only writes breakingProgress)
+    // -------------------- EDITS --------------------
     public Dictionary<TerrainType, int> UpdateVoxelGridWithSphere(
         Vector3 position, float radius, float strength, TerrainType terrainType,
         Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool forceReplace = false)
@@ -226,17 +273,16 @@ public class ChunkCell : MonoBehaviour
         bool forceReplace = false
     )
     {
-        Dictionary<TerrainType, int> blocks = new Dictionary<TerrainType, int>();
-        if (voxelData == null || voxelData.Length == 0) return blocks;
+        Dictionary<TerrainType, int> blocks = new();
+        if (_voxelData == null || _voxelData.Length == 0) return blocks;
 
         bool previewOnly = forceReplace; // preview fast path: only breakingProgress
+        int gridSize = Settings.gridSize;
 
         float SafeDiv(float a, float b) => a / (Mathf.Abs(b) < 1e-6f ? 1e-6f : b);
-
         float r2 = radiusGrid * radiusGrid;
         Quaternion invRot = shape == BrushShape.Wall ? Quaternion.Inverse(rotation) : Quaternion.identity;
 
-        // FULL-GRID LOOPS (reverted)
         for (int z = 0; z < gridSize; z++)
         for (int y = 0; y < gridSize; y++)
         for (int x = 0; x < gridSize; x++)
@@ -282,56 +328,56 @@ public class ChunkCell : MonoBehaviour
 
             if (previewOnly)
             {
-                voxelData[idx].breakingProgress = breakingProgress * falloff;
+                _voxelData[idx].breakingProgress = breakingProgress * falloff;
                 continue;
             }
 
             // REAL edit:
-            voxelData[idx].breakingProgress = breakingProgress * falloff;
+            _voxelData[idx].breakingProgress = breakingProgress * falloff;
 
-            float oldIso = voxelData[idx].iso;
-            TerrainType oldType = voxelData[idx].type;
+            float oldIso = _voxelData[idx].iso;
+            TerrainType oldType = _voxelData[idx].type;
 
             // Build: if coming from air, set type to fill
             if (strength > 0f && oldIso <= 0.5f)
-                voxelData[idx].type = fillType;
+                _voxelData[idx].type = fillType;
 
             // Break: if oneBlockOnly and type mismatch, skip iso change
             if (!(strength < 0f && oneBlockOnly && oldType != fillType))
             {
-                if (voxelData[idx].type != default)
-                    voxelData[idx].iso = Mathf.Clamp(oldIso + strength * falloff, 0f, 1f);
+                if (_voxelData[idx].type != default)
+                    _voxelData[idx].iso = Mathf.Clamp(oldIso + strength * falloff, 0f, 1f);
 
                 // Inventory transitions at iso 0.5
                 if (inventory != null)
                 {
-                    TerrainType type = voxelData[idx].type;
+                    TerrainType type = _voxelData[idx].type;
                     if (strength > 0f)
                     {
-                        if (oldIso <= 0.5f && voxelData[idx].iso >= 0.5f)
+                        if (oldIso <= 0.5f && _voxelData[idx].iso >= 0.5f)
                         {
                             if (!inventory.ContainsKey(type)) inventory[type] = 0;
-                                inventory[type]--;
+                            inventory[type]--;
                             if (!blocks.ContainsKey(type)) blocks[type] = 0;
-                                blocks[type]--;
+                            blocks[type]--;
                         }
                     }
                     else if (strength < 0f)
                     {
-                        if (oldIso >= 0.5f && voxelData[idx].iso <= 0.5f)
+                        if (oldIso >= 0.5f && _voxelData[idx].iso <= 0.5f)
                         {
                             if (!inventory.ContainsKey(type)) inventory[type] = 0;
-                                inventory[type]++;
+                            inventory[type]++;
                             if (!blocks.ContainsKey(type)) blocks[type] = 0;
-                                blocks[type]++;
+                            blocks[type]++;
                         }
                     }
                 }
             }
         }
 
-        // Single full upload (reverted)
-        voxelBuffer.SetData(voxelData);
+        // Single full upload
+        _voxelBuffer.SetData(_voxelData);
 
         // Remove foliage only on real edits (not preview)
         if (!previewOnly)
@@ -345,19 +391,18 @@ public class ChunkCell : MonoBehaviour
         return blocks;
     }
 
-    // ---- SMOOTHING (sphere) ----  (full-grid upload)
     public void SmoothSphere(Vector3 centerGrid, float radiusGrid, float strength, bool doFallOff = true)
     {
         strength = Mathf.Clamp01(strength);
-        if (strength <= 1e-6f || voxelData == null || voxelData.Length == 0) return;
+        if (strength <= 1e-6f || _voxelData == null || _voxelData.Length == 0) return;
 
-        int gs = gridSize;
+        int gs = Settings.gridSize;
         float r = Mathf.Max(0f, radiusGrid);
         float r2 = r * r;
 
         // Copy iso field so we read from src and write to dst without feedback
-        float[] srcIso = new float[voxelData.Length];
-        for (int i = 0; i < voxelData.Length; i++) srcIso[i] = voxelData[i].iso;
+        float[] srcIso = new float[_voxelData.Length];
+        for (int i = 0; i < _voxelData.Length; i++) srcIso[i] = _voxelData[i].iso;
 
         int[] w1 = { 1, 2, 1 }; // separable weights
 
@@ -396,7 +441,7 @@ public class ChunkCell : MonoBehaviour
                 }
             }
 
-            float avgIso = (accumW > 0) ? (accumIso / accumW) : voxelData[x + y * gs + z * gs * gs].iso;
+            float avgIso = (accumW > 0) ? (accumIso / accumW) : _voxelData[x + y * gs + z * gs * gs].iso;
 
             float t = strength;
             if (doFallOff && r > 1e-6f)
@@ -410,42 +455,50 @@ public class ChunkCell : MonoBehaviour
             if (t > 1e-6f)
             {
                 int idx = x + y * gs + z * gs * gs;
-                float cur = voxelData[idx].iso;
-                voxelData[idx].iso = Mathf.Lerp(cur, avgIso, t);
+                float cur = _voxelData[idx].iso;
+                _voxelData[idx].iso = Mathf.Lerp(cur, avgIso, t);
             }
         }
 
-        // Single full upload (reverted)
-        voxelBuffer.SetData(voxelData);
+        _voxelBuffer.SetData(_voxelData);
     }
 
-    // -------------------- READ + BUILD MESH + (OPTIONAL) FOLIAGE --------------------
-    // Default: rebuild collider (keeps your existing calls working)
-    public void ReadVerticesFromComputeShader() => ReadVerticesFromComputeShader(true);
-
-    // Pass rebuildCollider=false during preview frames to avoid PhysX allocations.
-    public void ReadVerticesFromComputeShader(bool rebuildCollider)
+    // -------------------- MESH BUILD --------------------
+    public void BuildMesh(bool rebuildCollider)
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
 
-        int kernelIndex = marchingCubesShader.FindKernel("March");
+        int gridSize = Settings.gridSize;
+        int kernelIndex = MarchingCubesShader.FindKernel("March");
 
-        triangleBuffer.SetCounterValue(0);
-        marchingCubesShader.SetBuffer(kernelIndex, "triangles", triangleBuffer);
-        marchingCubesShader.SetBuffer(kernelIndex, "voxels", voxelBuffer);
-        marchingCubesShader.SetInt("numPointsPerAxis", gridSize);
-        marchingCubesShader.SetFloat("isoLevel", isoLevel);
-        marchingCubesShader.SetFloat("chunkSize", chunkSize);
+        _triangleBuffer.SetCounterValue(0);
+        MarchingCubesShader.SetBuffer(kernelIndex, "triangles", _triangleBuffer);
+        MarchingCubesShader.SetBuffer(kernelIndex, "voxels", _voxelBuffer);
+        MarchingCubesShader.SetInt("numPointsPerAxis", gridSize);
+        MarchingCubesShader.SetFloat("isoLevel", Settings.isoLevel);
+        MarchingCubesShader.SetFloat("chunkSize", Settings.chunkSize);
 
-        marchingCubesShader.Dispatch(kernelIndex, Mathf.Max(1, gridSize / 4), Mathf.Max(1, gridSize / 4), Mathf.Max(1, gridSize / 4));
+        int groups = Mathf.Max(1, gridSize / 4);
+        MarchingCubesShader.Dispatch(kernelIndex, groups, groups, groups);
 
-        ComputeBuffer.CopyCount(triangleBuffer, counterBuffer, 0);
+        ComputeBuffer.CopyCount(_triangleBuffer, _counterBuffer, 0);
         int[] triCountArray = { 0 };
-        counterBuffer.GetData(triCountArray);
+        _counterBuffer.GetData(triCountArray);
         int numTris = triCountArray[0];
 
+        // If nothing to draw: keep renderer disabled and collider null
+        if (numTris <= 0)
+        {
+            _verts.Clear(); _norms.Clear(); _tris.Clear(); _uvs2.Clear(); _uvs3.Clear(); _cols.Clear();
+            _mesh.Clear(true);
+            _mesh.bounds = new Bounds(Vector3.zero, Vector3.zero);
+            if (_meshCollider) _meshCollider.sharedMesh = null;
+            if (_meshRenderer) _meshRenderer.enabled = false;
+            return;
+        }
+
         Triangle[] tris = new Triangle[numTris];
-        triangleBuffer.GetData(tris, 0, 0, numTris);
+        _triangleBuffer.GetData(tris, 0, 0, numTris);
 
         int vCount = numTris * 3;
         EnsureListCapacity(_verts, vCount);
@@ -457,13 +510,12 @@ public class ChunkCell : MonoBehaviour
 
         _verts.Clear(); _norms.Clear(); _tris.Clear(); _uvs2.Clear(); _uvs3.Clear(); _cols.Clear();
 
-        float spawnProbPerVertex = foliageTargetsPerArea / (gridSize * gridSize);
-        float cosMaxSlope = Mathf.Cos(foliageMaxSlopeDeg * Mathf.Deg2Rad);
+        float spawnProbPerVertex = _foliage.targetsPerArea / (gridSize * gridSize);
+        float cosMaxSlope = Mathf.Cos(_foliage.maxSlopeDeg * Mathf.Deg2Rad);
 
         for (int i = 0; i < numTris; i++)
         {
             int baseIndex = _verts.Count;
-
             var va = tris[i].a;
             var vb = tris[i].b;
             var vc = tris[i].c;
@@ -488,14 +540,14 @@ public class ChunkCell : MonoBehaviour
             _tris.Add(baseIndex + 1);
             _tris.Add(baseIndex + 2);
 
-            if (!foliageInitialized)
+            if (!_foliageInitialized)
             {
                 TrySpawnFoliage(va, spawnProbPerVertex, cosMaxSlope);
                 TrySpawnFoliage(vb, spawnProbPerVertex, cosMaxSlope);
                 TrySpawnFoliage(vc, spawnProbPerVertex, cosMaxSlope);
             }
         }
-        foliageInitialized = true;
+        _foliageInitialized = true;
 
         _mesh.Clear(false);
         _mesh.indexFormat = (vCount > 65535)
@@ -509,145 +561,153 @@ public class ChunkCell : MonoBehaviour
         _mesh.SetUVs(3, _uvs3);
         _mesh.RecalculateBounds();
 
-        if (rebuildCollider)
+        if (_meshRenderer) _meshRenderer.enabled = true;
+
+        if (rebuildCollider && _meshCollider)
         {
-            meshCollider.sharedMesh = null;   // free cooked data first
-            meshCollider.sharedMesh = _mesh;  // recook once
+            _meshCollider.sharedMesh = null;   // free cooked data first
+            _meshCollider.sharedMesh = _mesh;  // recook once
         }
     }
 
+    // -------------------- FOLIAGE --------------------
     private void TrySpawnFoliage(Vertex v, float spawnProbPerVertex, float cosMaxSlope)
     {
-        if (foliagePrefabs == null || foliagePrefabs.Length == 0) return;
+        if (_foliage.prefabs == null || _foliage.prefabs.Length == 0) return;
         if (v.data != (int)TerrainType.Grass) return;
-
         Vector3 n = v.normal.normalized;
         if (Vector3.Dot(n, Vector3.up) < cosMaxSlope) return;
 
         var worldPos = transform.position + v.position;
         uint seed = Hash(worldPos);
         if (Next01(ref seed) < spawnProbPerVertex)
-        {
             SpawnFoliage(worldPos, ref seed);
-        }
     }
 
-    // -------------------- FOLIAGE HELPERS --------------------
     private void SpawnFoliage(Vector3 worldPos, ref uint seed)
     {
-        if (foliagePrefabs == null || foliagePrefabs.Length == 0) return;
+        if (_foliage.prefabs == null || _foliage.prefabs.Length == 0) return;
+        int idx = NextRange(ref seed, 0, _foliage.prefabs.Length);
+        var prefab = _foliage.prefabs[idx];
 
-        int idx = NextRange(ref seed, 0, foliagePrefabs.Length);
-        var prefab = foliagePrefabs[idx];
-
-        float jx = (Next01(ref seed) - 0.5f) * 2f * positionJitter;
-        float jy = (Next01(ref seed) - 0.5f) * 2f * positionJitter;
+        float jx = (Next01(ref seed) - 0.5f) * 2f * _foliage.positionJitter;
+        float jy = (Next01(ref seed) - 0.5f) * 2f * _foliage.positionJitter;
         Vector3 jitteredPos = worldPos + new Vector3(jx, 0f, jy);
 
-        float yaw = (yawJitterDeg <= 0f) ? 0f : Next01(ref seed) * yawJitterDeg;
-        float pitch = (tiltJitterDeg <= 0f) ? 0f : (Next01(ref seed) - 0.5f) * 2f * tiltJitterDeg;
-        float roll = (tiltJitterDeg <= 0f) ? 0f : (Next01(ref seed) - 0.5f) * 2f * tiltJitterDeg;
+        float yaw = (_foliage.yawJitterDeg <= 0f) ? 0f : Next01(ref seed) * _foliage.yawJitterDeg;
+        float pitch = (_foliage.tiltJitterDeg <= 0f) ? 0f : (Next01(ref seed) - 0.5f) * 2f * _foliage.tiltJitterDeg;
+        float roll  = (_foliage.tiltJitterDeg <= 0f) ? 0f : (Next01(ref seed) - 0.5f) * 2f * _foliage.tiltJitterDeg;
         Quaternion rot = Quaternion.Euler(pitch, yaw, roll);
 
-        float sMin = Mathf.Min(uniformScaleRange.x, uniformScaleRange.y);
-        float sMax = Mathf.Max(uniformScaleRange.x, uniformScaleRange.y);
+        float sMin = Mathf.Min(_foliage.uniformScaleRange.x, _foliage.uniformScaleRange.y);
+        float sMax = Mathf.Max(_foliage.uniformScaleRange.x, _foliage.uniformScaleRange.y);
         float s = sMin + Next01(ref seed) * (sMax - sMin);
 
-        var parent = foliageParent != null ? foliageParent : transform;
+        var parent = FoliageParent != null ? FoliageParent : transform;
         var go = Instantiate(prefab, jitteredPos, rot, parent);
         go.transform.localScale = go.transform.localScale * s;
-
-        if (!go.TryGetComponent<FoliageTag>(out _))
-            go.AddComponent<FoliageTag>();
+        if (!go.TryGetComponent<FoliageTag>(out _)) go.AddComponent<FoliageTag>();
     }
 
     private void RemoveFoliageInsideBox(Vector3 centerGrid, Vector3 halfExtentsGrid, Quaternion rotation)
     {
-        if (foliageParent == null) return;
-
-        float scale = chunkSize / Mathf.Max(1f, (gridSize - 1f));
+        if (FoliageParent == null) return;
+        float scale = Settings.chunkSize / Mathf.Max(1f, (Settings.gridSize - 1f));
         Vector3 worldCenter = transform.position + centerGrid * scale;
         Vector3 worldHalf = halfExtentsGrid * scale;
-
         Quaternion inv = Quaternion.Inverse(rotation);
 
-        for (int i = foliageParent.childCount - 1; i >= 0; i--)
+        for (int i = FoliageParent.childCount - 1; i >= 0; i--)
         {
-            var child = foliageParent.GetChild(i);
+            var child = FoliageParent.GetChild(i);
             if (child.GetComponent<FoliageTag>() == null) continue;
-
             Vector3 local = inv * (child.position - worldCenter);
             Vector3 a = new Vector3(Mathf.Abs(local.x), Mathf.Abs(local.y), Mathf.Abs(local.z));
-
             if (a.x <= worldHalf.x && a.y <= worldHalf.y && a.z <= worldHalf.z)
-            {
                 Destroy(child.gameObject);
-            }
         }
     }
 
     private void RemoveFoliageInsideSphere(Vector3 centerGrid, float radiusGrid)
     {
-        if (foliageParent == null) return;
-
-        float scale = chunkSize / Mathf.Max(1f, (gridSize - 1f));
+        if (FoliageParent == null) return;
+        float scale = Settings.chunkSize / Mathf.Max(1f, (Settings.gridSize - 1f));
         Vector3 worldCenter = transform.position + centerGrid * scale;
         float radiusWorld = radiusGrid * scale;
         float radiusWorldSqr = radiusWorld * radiusWorld;
 
-        for (int i = foliageParent.childCount - 1; i >= 0; i--)
+        for (int i = FoliageParent.childCount - 1; i >= 0; i--)
         {
-            var child = foliageParent.GetChild(i);
+            var child = FoliageParent.GetChild(i);
             if (child.GetComponent<FoliageTag>() == null) continue;
-
             if ((child.position - worldCenter).sqrMagnitude <= radiusWorldSqr)
-            {
                 Destroy(child.gameObject);
+        }
+    }
+
+    private void ClearMeshAndFoliage()
+    {
+        if (_mesh != null)
+        {
+            _mesh.Clear(true); // wipe vertices/indices/layout
+            _mesh.bounds = new Bounds(Vector3.zero, Vector3.zero);
+            if (_meshCollider) _meshCollider.sharedMesh = null;  // drop any stale cooked collider
+        }
+        if (FoliageParent != null)
+        {
+            for (int i = FoliageParent.childCount - 1; i >= 0; i--)
+            {
+                var child = FoliageParent.GetChild(i);
+                if (child.GetComponent<FoliageTag>() != null)
+                    Destroy(child.gameObject);
             }
         }
     }
 
-    // marker so we know what to delete
-    private class FoliageTag : MonoBehaviour {}
-
-    // ---------- DETERMINISTIC HASH + PRNG ----------
-    static uint Hash(Vector3 p)
+    public void RebuildColliderOnly()
     {
-        const float quant = 0.25f;
-        int xi = Mathf.FloorToInt(p.x / quant);
-        int yi = Mathf.FloorToInt(p.y / quant);
-        int zi = Mathf.FloorToInt(p.z / quant);
+        if (_meshCollider == null) return;
 
-        uint h = 2166136261u;
-        unchecked
+        // If mesh is null or empty, make sure collider is cleared and bail
+        if (_mesh == null || _mesh.vertexCount == 0 || _mesh.GetIndexCount(0) == 0)
         {
-            h = (h ^ (uint)xi) * 16777619u;
-            h = (h ^ (uint)yi) * 16777619u;
-            h = (h ^ (uint)zi) * 16777619u;
-            h ^= h >> 16; h *= 0x7feb352d; h ^= h >> 15; h *= 0x846ca68b; h ^= h >> 16;
+            if (_meshCollider.sharedMesh != null)
+                _meshCollider.sharedMesh = null;
+            return;
         }
-        return h;
+
+        // Safe recook
+        _meshCollider.sharedMesh = null;
+        _meshCollider.sharedMesh = _mesh;
     }
 
-    static float Next01(ref uint state)
+    // -------------------- BUFFERS --------------------
+    private void EnsureBuffersForGridSize(int gridSize)
     {
-        state ^= state << 13; state ^= state >> 17; state ^= state << 5;
-        return (state & 0x00FFFFFF) / 16777216f;
+        int voxelGridSize = gridSize * gridSize * gridSize;
+        bool needResize = _voxelBuffer == null || _voxelBuffer.count != voxelGridSize;
+
+        if (!needResize) return;
+        ReleaseBuffers();
+
+        _triangleBuffer = new ComputeBuffer(voxelGridSize * 5, System.Runtime.InteropServices.Marshal.SizeOf(typeof(Triangle)), ComputeBufferType.Append);
+        _counterBuffer  = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
+        _voxelBuffer    = new ComputeBuffer(voxelGridSize, System.Runtime.InteropServices.Marshal.SizeOf(typeof(Voxel)));
     }
 
-    static int NextRange(ref uint state, int minInclusive, int maxExclusive)
+    private void ReleaseBuffers()
     {
-        float r = Next01(ref state);
-        return minInclusive + Mathf.FloorToInt(r * (maxExclusive - minInclusive));
+        if (_triangleBuffer != null) { _triangleBuffer.Release(); _triangleBuffer = null; }
+        if (_counterBuffer  != null) { _counterBuffer.Release();  _counterBuffer = null; }
+        if (_voxelBuffer    != null) { _voxelBuffer.Release();    _voxelBuffer = null; }
     }
 
-    // -------------------- STRUCTS --------------------
-    struct Triangle
+    // -------------------- DATA TYPES --------------------
+    private struct Triangle
     {
         public Vertex a;
         public Vertex b;
         public Vertex c;
-
         public Vertex GetVertex(int index)
         {
             return index switch
@@ -668,12 +728,11 @@ public class ChunkCell : MonoBehaviour
         public float breakingProgress;
     }
 
-    struct Voxel
+    private struct Voxel
     {
         public TerrainType type;
         public float iso;
         public float breakingProgress;
-
         public Voxel(TerrainType type, float iso, float breakingProgress)
         {
             this.type = type;
@@ -682,9 +741,45 @@ public class ChunkCell : MonoBehaviour
         }
     }
 
+    private class FoliageTag : MonoBehaviour {}
+
     // -------------------- UTILS --------------------
-    static void EnsureListCapacity<T>(List<T> list, int target)
+    private static void EnsureListCapacity<T>(List<T> list, int target)
+    { if (list.Capacity < target) list.Capacity = target; }
+
+    private static uint Hash(Vector3 p)
     {
-        if (list.Capacity < target) list.Capacity = target;
+        const float quant = 0.25f;
+        int xi = Mathf.FloorToInt(p.x / quant);
+        int yi = Mathf.FloorToInt(p.y / quant);
+        int zi = Mathf.FloorToInt(p.z / quant);
+        uint h = 2166136261u;
+        unchecked
+        {
+            h = (h ^ (uint)xi) * 16777619u;
+            h = (h ^ (uint)yi) * 16777619u;
+            h = (h ^ (uint)zi) * 16777619u;
+            h ^= h >> 16; h *= 0x7feb352d; h ^= h >> 15; h *= 0x846ca68b; h ^= h >> 16;
+        }
+        return h;
     }
+
+    private static float Next01(ref uint state)
+    { state ^= state << 13; state ^= state >> 17; state ^= state << 5; return (state & 0x00FFFFFF) / 16777216f; }
+
+    private static int NextRange(ref uint state, int minInclusive, int maxExclusive)
+    { float r = Next01(ref state); return minInclusive + Mathf.FloorToInt(r * (maxExclusive - minInclusive)); }
+    // Add this helper anywhere in the class (e.g., near other public helpers)
+    public bool HasRenderableMesh()
+    {
+        // GetIndexCount(0) is fast and avoids allocating triangles array
+        return _mesh != null && _mesh.vertexCount > 0 && _mesh.GetIndexCount(0) > 0;
+    }
+
+
+
+
+
+    // -------------------- ENUMS --------------------
+    public enum BrushShape { Sphere, Wall }
 }
