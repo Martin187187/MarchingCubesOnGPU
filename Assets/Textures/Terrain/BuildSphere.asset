@@ -26,8 +26,10 @@ MonoBehaviour:
   lockYawWhileActive: 1
   hideBrush: 0
   allowPositionSnap: 1
+  snapFactor: 1
   allowYawSnap: 1
   allowTypeAnchor: 0
-  fillType: 5
+  fillType: 8
   enableChargeHold: 0
   chargeTimeSeconds: 0.25
+  cooldownSeconds: 0.08

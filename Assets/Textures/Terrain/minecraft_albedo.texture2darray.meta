@@ -13,10 +13,12 @@ ScriptedImporter:
   anisoLevel: 1
   isReadable: 0
   textures:
-  - {fileID: 2800000, guid: 4511e096ac902e14f8542a8be4d63dd5, type: 3}
-  - {fileID: 2800000, guid: 5607581d359280c49bbf4746bb72e8f2, type: 3}
-  - {fileID: 2800000, guid: eae9710dfa7948c4a9ef0ae3d831fa48, type: 3}
-  - {fileID: 2800000, guid: 655fb19a4ac2ba84e85cdffd429d4745, type: 3}
-  - {fileID: 2800000, guid: e2cc2816a3e48b246aac8ba75de3f4b7, type: 3}
-  - {fileID: 2800000, guid: e1515852a5d745e4d98307e0c229d029, type: 3}
-  - {fileID: 2800000, guid: 25e7960d5344ca842be23ecb854d6bd5, type: 3}
+  - {fileID: 2800000, guid: df14bf8ffede942a2bd01768a6591f7a, type: 3}
+  - {fileID: 2800000, guid: 5d65332acf4e54d8db545454084182b7, type: 3}
+  - {fileID: 2800000, guid: 45cf74c8ae4dc4f4e949436dfa0b2942, type: 3}
+  - {fileID: 2800000, guid: 5fb990298d7424d058a2210b379a9b88, type: 3}
+  - {fileID: 2800000, guid: 8f99fa54760954b5bbbce6d8eb152c39, type: 3}
+  - {fileID: 2800000, guid: cf5b258dd003c46d6b2af0827ec27982, type: 3}
+  - {fileID: 2800000, guid: 93c26f701263f4843bac921e0905a7d9, type: 3}
+  - {fileID: 2800000, guid: 2618344bee99c49ee8250c348e3532c5, type: 3}
+  - {fileID: 2800000, guid: 2013935b166b948739088b2e3ccb00bf, type: 3}

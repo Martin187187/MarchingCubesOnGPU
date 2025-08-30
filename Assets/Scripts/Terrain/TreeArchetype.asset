@@ -1,0 +1,76 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d661ca635d5e549139626f51c5e82943, type: 3}
+  m_Name: TreeArchetype
+  m_EditorClassIdentifier: 
+  trunkHeight:
+    min: 6
+    max: 12
+  trunkRadius:
+    min: 1.2
+    max: 2
+  voxelStampStep: 0.5
+  branches:
+    min: 4
+    max: 5
+  branchLen:
+    min: 4
+    max: 8
+  branchRadius:
+    min: 0.8
+    max: 1.4
+  branchPitchDeg:
+    min: 20
+    max: 45
+  branchYawJitterDeg:
+    min: 0
+    max: 360
+  leafBlobsPerBranch:
+    min: 2
+    max: 4
+  leafBlobRadius:
+    min: 4
+    max: 7
+  branchStartHeight01: 0.35
+  strengthWorld: 1
+  forceReplace: 1
+  allowedGroundTypes: 
+  requiredSoilDepth: 0
+  roots:
+    min: 2
+    max: 5
+  rootLen:
+    min: 2.5
+    max: 6.5
+  rootRadius:
+    min: 0.8
+    max: 1.2
+  rootTaper01: 0.5
+  rootStartDepth: 0.35
+  rootPitchDeg:
+    min: 10
+    max: 25
+  rootYawJitterDeg:
+    min: 0
+    max: 360
+  rootTurnJitterDeg:
+    min: 3
+    max: 12
+  rootWobble:
+    min: 0.3
+    max: 0.5
+  rootSegments:
+    min: 3
+    max: 12
+  rootStrengthWorld: 1
+  rootDownBiasPerSegment: 0.451
+  rootDepthCap: 0

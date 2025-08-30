@@ -220,7 +220,7 @@ public class ChunkCell : MonoBehaviour
     // -------------------- EDITS --------------------
     public Dictionary<TerrainType, int> UpdateVoxelGridWithSphere(
         Vector3 position, float radius, float strength, TerrainType terrainType,
-        Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool forceReplace = false)
+        Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool previewOnly = false, bool forceReplace = false)
     {
         return UpdateVoxelGrid(
             BrushShape.Sphere,
@@ -234,13 +234,14 @@ public class ChunkCell : MonoBehaviour
             breakingProgress,
             doFallOff,
             oneBlockOnly,
+            previewOnly,
             forceReplace
         );
     }
 
     public Dictionary<TerrainType, int> UpdateVoxelGridWithCube(
         Vector3 center, Vector3 halfExtents, Quaternion rotation, float strength,
-        TerrainType terrainType, Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool forceReplace = false)
+        TerrainType terrainType, Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool previewOnly = false, bool forceReplace = false)
     {
         return UpdateVoxelGrid(
             BrushShape.Wall,
@@ -254,6 +255,7 @@ public class ChunkCell : MonoBehaviour
             breakingProgress,
             doFallOff,
             oneBlockOnly,
+            previewOnly,
             forceReplace
         );
     }
@@ -270,13 +272,13 @@ public class ChunkCell : MonoBehaviour
         float breakingProgress = 0,
         bool doFallOff = true,
         bool oneBlockOnly = false,
+        bool previewOnly = false,
         bool forceReplace = false
     )
     {
         Dictionary<TerrainType, int> blocks = new();
         if (_voxelData == null || _voxelData.Length == 0) return blocks;
 
-        bool previewOnly = forceReplace; // preview fast path: only breakingProgress
         int gridSize = Settings.gridSize;
 
         float SafeDiv(float a, float b) => a / (Mathf.Abs(b) < 1e-6f ? 1e-6f : b);
@@ -339,7 +341,7 @@ public class ChunkCell : MonoBehaviour
             TerrainType oldType = _voxelData[idx].type;
 
             // Build: if coming from air, set type to fill
-            if (strength > 0f && oldIso <= 0.5f)
+            if (strength > 0f && oldIso <= 0.5f || forceReplace)
                 _voxelData[idx].type = fillType;
 
             // Break: if oneBlockOnly and type mismatch, skip iso change

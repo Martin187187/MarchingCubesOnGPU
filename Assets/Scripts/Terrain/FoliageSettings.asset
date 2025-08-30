@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 61d27ecba9c2b4978a42b9718ad70ed1, type: 3}
+  m_Name: FoliageSettings
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 7110513248368685802, guid: 3aa54be08e092174ab6b689e524fdf44, type: 3}
+  - {fileID: 6684935879519352256, guid: d0fa3c49b2c9cd84bb5a644c53ef025e, type: 3}
+  maxSlopeDeg: 25
+  targetsPerArea: 10
+  yawJitterDeg: 360
+  tiltJitterDeg: 4
+  positionJitter: 0.05
+  uniformScaleRange: {x: 0.9, y: 1.1}

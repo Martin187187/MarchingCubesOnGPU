@@ -408,36 +408,9 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 82e69832a1c6d0643baf913fec45237e, type: 2}
   - {fileID: 11400000, guid: b23933f3e12e842419d73067e111b946, type: 2}
   - {fileID: 11400000, guid: e1af475f9860b074c88773032a3c4a1e, type: 2}
-  gridSize: 32
-  chunkSize: 16
-  isoLevel: 0.5
+  config: {fileID: 11400000, guid: 7f6e2eded556a4175ad0cf32b4c95210, type: 2}
   player: {fileID: 140985713}
-  viewRadiusChunks: 6
-  verticalRadiusChunks: 2
-  unloadHysteresis: 1
-  colliderRadiusChunks: 3
-  wantedUpdateInterval: 0.25
-  budgetDensityPerFrame: 2
-  budgetMeshPerFrame: 8
-  budgetColliderPromotionsPerFrame: 2
-  prewarmChunks: 64
-  maxChunks: 512
-  foliagePrefabs:
-  - {fileID: 4025988222033845712, guid: 1f9036ec905b920479091aca9ba81305, type: 3}
-  - {fileID: 3731095390187986728, guid: 04054a3651be51d4193414f850cf6bde, type: 3}
-  - {fileID: 7110513248368685802, guid: 3aa54be08e092174ab6b689e524fdf44, type: 3}
-  - {fileID: 5157409133979067158, guid: 4b21e533c871dba4bb5c56ba22947be8, type: 3}
-  - {fileID: 8021261736545423652, guid: 3f8eda438d8aeab4d9223c5b53f5ef62, type: 3}
-  - {fileID: 4089638310410276538, guid: 362fbd4477668ab4a956faef2e191ccf, type: 3}
-  - {fileID: 5008984729542433618, guid: 43999c511a596754fb989ff074c5955d, type: 3}
-  - {fileID: 6684935879519352256, guid: d0fa3c49b2c9cd84bb5a644c53ef025e, type: 3}
-  foliageMaxSlopeDeg: 25
-  foliageTargetsPerArea: 16
-  yawJitterDeg: 360
-  tiltJitterDeg: 4
-  positionJitter: 0.05
-  uniformScaleRange: {x: 0.8, y: 1.2}
-  terrainType: 0
+  terrainType: 7
 --- !u!114 &628767259
 MonoBehaviour:
   m_ObjectHideFlags: 0
