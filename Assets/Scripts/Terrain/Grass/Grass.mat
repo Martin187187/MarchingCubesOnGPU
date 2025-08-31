@@ -48,7 +48,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: 2038a37a87e1eff4fa5efd69c9d1312e, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
@@ -81,31 +81,33 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _AmbientBoost: 0.42
+    - _AmbientBoost: 0.14
     - _ArrayCount: 9
-    - _Bend: 0.346
+    - _Bend: 0.133
     - _BladeHeight: 0.7
     - _BladeWidth: 0.12
     - _BumpScale: 1
-    - _BypassFilter: 1
-    - _ColorJitter: 0.42
+    - _BypassFilter: 0
+    - _ColorJitter: 0.275
     - _CoverageBoost: 0.249
-    - _Cutoff: 0.35
-    - _Darkening: 0.42
+    - _Cutoff: 0.287
+    - _Darkening: 0.338
     - _Density: 4.7
     - _DetailNormalMapScale: 1
+    - _DoClip: 0
     - _DstBlend: 0
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
     - _GrassSlice: 2
-    - _Height: 0.87
-    - _JitterRadius: 0.307
+    - _Height: 0.85
+    - _JitterRadius: 0.8
     - _LODEnd: 190
     - _LODStart: 44
+    - _Layer: 0
     - _Lift: 0
     - _MaxQuadsPerVertex: 5.5
-    - _MaxSlopeDeg: 40
+    - _MaxSlopeDeg: 15.3
     - _Metallic: 0
     - _MinDensity: 0.4
     - _Mode: 0
@@ -119,19 +121,22 @@ Material:
     - _ShadowThickenPower: 1.49
     - _ShadowTopFade: 0.8
     - _ShadowTopMin: 0.35
-    - _SizeJitter: 0.52
+    - _ShowAlpha: 0
+    - _SizeJitter: 0.421
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _ThicknessPower: 2.84
     - _ThicknessWeight: 1.08
-    - _TiltDeg: 21
+    - _TiltDeg: 12.5
     - _TopWidth: 0.4
     - _TransOccl: 4
     - _TransPower: 5.05
     - _Translucency: 0.689
     - _UV2XMin: 2
     - _UVSec: 0
+    - _UseTex2D: 0
+    - _UseTexArray: 0
     - _WeightChan: 1
     - _WeightMin: 0
     - _Width: 0.36
@@ -140,14 +145,19 @@ Material:
     - _WindFreq: 1.2
     - _WindSpeed: 0.045
     - _WindStrength: 0.45
-    - _YawJitterDeg: 73
+    - _YawJitterDeg: 109
     - _ZWrite: 1
     m_Colors:
+    - _BaseColor: {r: 1, g: 0, b: 0, a: 1}
     - _Color: {r: 0.6258859, g: 0.764151, b: 0.29196337, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _GrassColor: {r: 0, g: 1, b: 0, a: 1}
     - _OcclOriginWS: {r: 0, g: 0, b: 0, a: 0}
     - _OcclSizeWS: {r: 100, g: 0, b: 100, a: 0}
-    - _Tint: {r: 0.383277, g: 0.9339623, b: 0.49367878, a: 0}
+    - _SolidColor: {r: 0, g: 1, b: 0, a: 1}
+    - _Tint: {r: 0.6424343, g: 0.735849, b: 0.3019758, a: 1}
+    - _Tint2D: {r: 1, g: 1, b: 1, a: 1}
+    - _TintArray: {r: 1, g: 1, b: 1, a: 1}
     - _WindDir: {r: 1, g: 0, b: 1, a: 0}
     - _WindTiling: {r: 0.08, g: 0.08, b: 0, a: 0}
   m_BuildTextureStacks: []

@@ -48,11 +48,11 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _CrackNormal:
-        m_Texture: {fileID: 2800000, guid: 7f19957d57670454e8139d61c70154bb, type: 3}
+        m_Texture: {fileID: 2800000, guid: 2f2415b55061cfd46b6a154cb1b617c0, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _CrackTex:
-        m_Texture: {fileID: 2800000, guid: e5055e0d246bd1047bdb28057a93753c, type: 3}
+        m_Texture: {fileID: 2800000, guid: 4c5b7ebf4dfa67c46ab4f9d2ba438a87, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _DetailAlbedoMap:
@@ -80,7 +80,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MaskTex:
-        m_Texture: {fileID: -7639397621201060638, guid: 357c6513664b2124e8542d61c06ced45, type: 3}
+        m_Texture: {fileID: -7639397621201060638, guid: b250d8b4ec9497a42affaec748ef32bc, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicGlossMap:
@@ -88,7 +88,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _NormalTex:
-        m_Texture: {fileID: -7639397621201060638, guid: b250d8b4ec9497a42affaec748ef32bc, type: 3}
+        m_Texture: {fileID: -7639397621201060638, guid: 357c6513664b2124e8542d61c06ced45, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _OcclusionMap:
@@ -130,31 +130,31 @@ Material:
     - _BumpStrength: 0.28
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
-    - _CrackNormalStrength: 1.36
+    - _CrackNormalStrength: 0.37
     - _CrackSmoothMul: 0.83
     - _CrackStrength: 0.61
-    - _CrackTiling: 0.31
+    - _CrackTiling: 0.15
     - _Cull: 2
     - _Cutoff: 0.5
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _DstBlendAlpha: 0
-    - _EmissionBoost: 1
+    - _EmissionBoost: 0.27
     - _EnableCracks: 1
     - _EnvironmentReflections: 1
     - _FlipGreen: 0
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
-    - _LabMetalThreshold: 0.34
+    - _LabMetalThreshold: 0.15
     - _Metallic: 0.08
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1
     - _ShadowFill: 0
-    - _Smoothness: 0.11
+    - _Smoothness: 0.35
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
@@ -167,7 +167,7 @@ Material:
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _CrackColor: {r: 0.3584906, g: 0.3584906, b: 0.3584906, a: 1}
+    - _CrackColor: {r: 0.254717, g: 0.25111252, b: 0.25111252, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []
