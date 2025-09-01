@@ -43,10 +43,10 @@ public class ChunkCell : MonoBehaviour
     public Transform FoliageParent { get; private set; }
 
     // -------------------- RUNTIME BUFFERS --------------------
-    private Voxel[] _voxelData;                       
-    private ComputeBuffer _triangleBuffer;            
-    private ComputeBuffer _counterBuffer;             
-    private ComputeBuffer _voxelBuffer;               
+    private Voxel[] _voxelData;
+    private ComputeBuffer _triangleBuffer;
+    private ComputeBuffer _counterBuffer;
+    private ComputeBuffer _voxelBuffer;
 
     // Rendering components
     private MeshRenderer _meshRenderer;
@@ -65,6 +65,12 @@ public class ChunkCell : MonoBehaviour
     // Foliage
     private FoliageSettings _foliage;
     private bool _foliageInitialized = false;
+
+    // -------------------- BATCHING --------------------
+    private bool _batchActive = false;
+    private bool _voxelDirtyFromBatch = false;
+    private readonly List<(BrushShape shape, Vector3 centerGrid, float radiusGrid, Vector3 halfExtentsGrid, Quaternion rotation)> _pendingFoliageSweeps = new();
+    private readonly Dictionary<TerrainType, int> _pendingInventoryDelta = new();
 
     // -------------------- LIFECYCLE (POOL-FRIENDLY) --------------------
     /// <summary>
@@ -137,6 +143,12 @@ public class ChunkCell : MonoBehaviour
         if (_voxelBuffer != null) _voxelBuffer.SetData(_voxelData);
 
         _foliageInitialized = false;
+
+        // reset batching state
+        _batchActive = false;
+        _voxelDirtyFromBatch = false;
+        _pendingFoliageSweeps.Clear();
+        _pendingInventoryDelta.Clear();
     }
 
     /// <summary>Release GPU buffers and mesh. Call only when destroying the pool altogether.</summary>
@@ -217,7 +229,7 @@ public class ChunkCell : MonoBehaviour
         return _voxelData[idx].type;
     }
 
-    // -------------------- EDITS --------------------
+    // -------------------- EDITS (PUBLIC WRAPPERS) --------------------
     public Dictionary<TerrainType, int> UpdateVoxelGridWithSphere(
         Vector3 position, float radius, float strength, TerrainType terrainType,
         Dictionary<TerrainType, int> inventory, float breakingProgress = 0, bool doFallOff = true, bool oneBlockOnly = false, bool previewOnly = false, bool forceReplace = false)
@@ -260,6 +272,7 @@ public class ChunkCell : MonoBehaviour
         );
     }
 
+    // -------------------- EDITS (CORE) --------------------
     private Dictionary<TerrainType, int> UpdateVoxelGrid(
         BrushShape shape,
         Vector3 centerGrid,
@@ -281,13 +294,46 @@ public class ChunkCell : MonoBehaviour
 
         int gridSize = Settings.gridSize;
 
+        // ---------- Compute tight AABB in grid space ----------
+        int minX, maxX, minY, maxY, minZ, maxZ;
+
+        if (shape == BrushShape.Sphere)
+        {
+            float r = Mathf.Max(0f, radiusGrid);
+            Vector3 c = centerGrid;
+
+            minX = Mathf.Clamp(Mathf.FloorToInt(c.x - r), 0, gridSize - 1);
+            maxX = Mathf.Clamp(Mathf.CeilToInt (c.x + r), 0, gridSize - 1);
+            minY = Mathf.Clamp(Mathf.FloorToInt(c.y - r), 0, gridSize - 1);
+            maxY = Mathf.Clamp(Mathf.CeilToInt (c.y + r), 0, gridSize - 1);
+            minZ = Mathf.Clamp(Mathf.FloorToInt(c.z - r), 0, gridSize - 1);
+            maxZ = Mathf.Clamp(Mathf.CeilToInt (c.z + r), 0, gridSize - 1);
+        }
+        else // BrushShape.Wall (oriented box)
+        {
+            Vector3 he = halfExtentsGrid;
+            Vector3 c = centerGrid;
+
+            // Compute conservative axis-aligned half-extents after rotation
+            Vector3 e = ComputeAabbHalfExtents(rotation, he);
+
+            minX = Mathf.Clamp(Mathf.FloorToInt(c.x - e.x), 0, gridSize - 1);
+            maxX = Mathf.Clamp(Mathf.CeilToInt (c.x + e.x), 0, gridSize - 1);
+            minY = Mathf.Clamp(Mathf.FloorToInt(c.y - e.y), 0, gridSize - 1);
+            maxY = Mathf.Clamp(Mathf.CeilToInt (c.y + e.y), 0, gridSize - 1);
+            minZ = Mathf.Clamp(Mathf.FloorToInt(c.z - e.z), 0, gridSize - 1);
+            maxZ = Mathf.Clamp(Mathf.CeilToInt (c.z + e.z), 0, gridSize - 1);
+        }
+
+        // ---------- Precompute helpers ----------
         float SafeDiv(float a, float b) => a / (Mathf.Abs(b) < 1e-6f ? 1e-6f : b);
         float r2 = radiusGrid * radiusGrid;
         Quaternion invRot = shape == BrushShape.Wall ? Quaternion.Inverse(rotation) : Quaternion.identity;
 
-        for (int z = 0; z < gridSize; z++)
-        for (int y = 0; y < gridSize; y++)
-        for (int x = 0; x < gridSize; x++)
+        // ---------- Iterate only affected voxels ----------
+        for (int z = minZ; z <= maxZ; z++)
+        for (int y = minY; y <= maxY; y++)
+        for (int x = minX; x <= maxX; x++)
         {
             Vector3 p = new Vector3(x, y, z);
             int idx = x + y * gridSize + z * gridSize * gridSize;
@@ -303,12 +349,12 @@ public class ChunkCell : MonoBehaviour
                     if (doFallOff && radiusGrid > 1e-6f)
                     {
                         float dist = Mathf.Sqrt(d2);
-                        falloff = 1f - Mathf.Clamp01(dist / radiusGrid);
+                        falloff = 1f - Mathf.Clamp01(dist / Mathf.Max(1e-6f, radiusGrid));
                     }
                     inside = true;
                 }
             }
-            else
+            else // oriented box
             {
                 Vector3 local = invRot * (p - centerGrid);
                 Vector3 a = new Vector3(Mathf.Abs(local.x), Mathf.Abs(local.y), Mathf.Abs(local.z));
@@ -334,14 +380,14 @@ public class ChunkCell : MonoBehaviour
                 continue;
             }
 
-            // REAL edit:
+            // --- REAL edit ---
             _voxelData[idx].breakingProgress = breakingProgress * falloff;
 
             float oldIso = _voxelData[idx].iso;
             TerrainType oldType = _voxelData[idx].type;
 
-            // Build: if coming from air, set type to fill
-            if (strength > 0f && oldIso <= 0.5f || forceReplace)
+            // Build: if coming from air, set type to fill (or if forceReplace)
+            if ((strength > 0f && oldIso <= 0.5f) || forceReplace)
                 _voxelData[idx].type = fillType;
 
             // Break: if oneBlockOnly and type mismatch, skip iso change
@@ -378,21 +424,81 @@ public class ChunkCell : MonoBehaviour
             }
         }
 
-        // Single full upload
-        _voxelBuffer.SetData(_voxelData);
+        // mark dirty
+        _voxelDirtyFromBatch = true;
 
-        // Remove foliage only on real edits (not preview)
+        // Upload immediately if NOT batching
+        if (!_batchActive)
+        {
+            _voxelBuffer.SetData(_voxelData);
+        }
+
+        // Foliage removal (defer during batch). Only on real edits (not preview).
         if (!previewOnly)
         {
-            if (shape == BrushShape.Sphere)
-                RemoveFoliageInsideSphere(centerGrid, radiusGrid);
+            if (_batchActive)
+            {
+                _pendingFoliageSweeps.Add((shape, centerGrid, radiusGrid, halfExtentsGrid, rotation));
+            }
             else
-                RemoveFoliageInsideBox(centerGrid, halfExtentsGrid, rotation);
+            {
+                if (shape == BrushShape.Sphere)
+                    RemoveFoliageInsideSphere(centerGrid, radiusGrid);
+                else
+                    RemoveFoliageInsideBox(centerGrid, halfExtentsGrid, rotation);
+            }
+        }
+
+        // Aggregate inventory delta if batching
+        if (_batchActive && blocks != null)
+        {
+            foreach (var kv in blocks)
+                _pendingInventoryDelta[kv.Key] = _pendingInventoryDelta.TryGetValue(kv.Key, out var v) ? v + kv.Value : kv.Value;
         }
 
         return blocks;
     }
 
+    /// <summary>Begin a batched edit session: defer GPU upload and foliage sweeps.</summary>
+    public void BeginBatch()
+    {
+        if (_batchActive) return;
+        _batchActive = true;
+        _voxelDirtyFromBatch = false;
+        _pendingFoliageSweeps.Clear();
+        _pendingInventoryDelta.Clear();
+    }
+
+    /// <summary>
+    /// End a batched edit session: single GPU upload (if any changes) and run pending foliage sweeps.
+    /// Returns the aggregated inventory delta for this chunk during the batch.
+    /// </summary>
+    public Dictionary<TerrainType,int> EndBatch()
+    {
+        if (!_batchActive)
+            return new Dictionary<TerrainType,int>();
+
+        if (_voxelDirtyFromBatch && _voxelBuffer != null)
+            _voxelBuffer.SetData(_voxelData); // one upload
+
+        foreach (var r in _pendingFoliageSweeps)
+        {
+            if (r.shape == BrushShape.Sphere)
+                RemoveFoliageInsideSphere(r.centerGrid, r.radiusGrid);
+            else
+                RemoveFoliageInsideBox(r.centerGrid, r.halfExtentsGrid, r.rotation);
+        }
+
+        _batchActive = false;
+
+        var outDelta = new Dictionary<TerrainType,int>(_pendingInventoryDelta);
+        _pendingInventoryDelta.Clear();
+        _pendingFoliageSweeps.Clear();
+        _voxelDirtyFromBatch = false;
+        return outDelta;
+    }
+
+    // -------------------- SMOOTH --------------------
     public void SmoothSphere(Vector3 centerGrid, float radiusGrid, float strength, bool doFallOff = true)
     {
         strength = Mathf.Clamp01(strength);
@@ -462,7 +568,10 @@ public class ChunkCell : MonoBehaviour
             }
         }
 
-        _voxelBuffer.SetData(_voxelData);
+        // smoothing writes to voxels; honor batching
+        _voxelDirtyFromBatch = true;
+        if (!_batchActive)
+            _voxelBuffer.SetData(_voxelData);
     }
 
     // -------------------- MESH BUILD --------------------
@@ -771,16 +880,26 @@ public class ChunkCell : MonoBehaviour
 
     private static int NextRange(ref uint state, int minInclusive, int maxExclusive)
     { float r = Next01(ref state); return minInclusive + Mathf.FloorToInt(r * (maxExclusive - minInclusive)); }
+
     // Add this helper anywhere in the class (e.g., near other public helpers)
     public bool HasRenderableMesh()
     {
         // GetIndexCount(0) is fast and avoids allocating triangles array
         return _mesh != null && _mesh.vertexCount > 0 && _mesh.GetIndexCount(0) > 0;
     }
+    private static Vector3 ComputeAabbHalfExtents(Quaternion rot, Vector3 he)
+    {
+        // Rotation basis vectors (columns of rotation matrix)
+        Vector3 bx = rot * Vector3.right;
+        Vector3 by = rot * Vector3.up;
+        Vector3 bz = rot * Vector3.forward;
 
-
-
-
+        // Sum of |basis component| * corresponding half-extent along each world axis
+        float ex = Mathf.Abs(bx.x) * he.x + Mathf.Abs(by.x) * he.y + Mathf.Abs(bz.x) * he.z;
+        float ey = Mathf.Abs(bx.y) * he.x + Mathf.Abs(by.y) * he.y + Mathf.Abs(bz.y) * he.z;
+        float ez = Mathf.Abs(bx.z) * he.x + Mathf.Abs(by.z) * he.y + Mathf.Abs(bz.z) * he.z;
+        return new Vector3(ex, ey, ez);
+    }
 
     // -------------------- ENUMS --------------------
     public enum BrushShape { Sphere, Wall }

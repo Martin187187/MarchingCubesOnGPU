@@ -26,6 +26,6 @@ MonoBehaviour:
   prewarmChunks: 64
   maxChunks: 512
   foliageSettings: {fileID: 11400000, guid: c390c4211ac24406781b6bbb8713f76f, type: 2}
-  budgetStructureStampsPerFrame: 200
-  budgetStructureChunksPerFrame: 2
+  budgetStructureStampsPerFrame: 24
+  budgetStructureChunksPerFrame: 1
   treeSpawner: {fileID: 11400000, guid: 2b4c64cacfce840aca6df04fe2a9d4ac, type: 2}

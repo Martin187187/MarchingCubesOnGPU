@@ -96,51 +96,60 @@ public sealed class StructureStage : IPipelineStage
         var placed = new List<Vector3>();
         int stamps = 0;
 
-        for (int i = 0; i < targetCount; i++)
+        // batch all stamps for this chunk in one go
+        using (var batch = edits.CreateBatch())
         {
-            if (stamps >= stampsBudget) break;
-
-            Vector3 chunkOrigin = world.ChunkOriginWorld(coord);
-            float gs = config.chunkSize;
-            Vector3 pos = chunkOrigin + new Vector3((float)rng.NextDouble() * gs, 0f, (float)rng.NextDouble() * gs);
-
-            // ground probe
-            if (!TryFindGround(ref pos, out var groundType)) continue;
-
-            // altitude constraint
-            if (pos.y < treeSpawner.altitudeWorld.min || pos.y > treeSpawner.altitudeWorld.max) continue;
-
-            // slope constraint
-            if (!SlopeOK(pos, treeSpawner.maxSlopeDeg)) continue;
-
-            // global soil whitelist (optional)
-            if (treeSpawner.allowedGroundTypes != null && treeSpawner.allowedGroundTypes.Length > 0)
+            for (int i = 0; i < targetCount; i++)
             {
-                bool okSoil = false;
-                foreach (var gt in treeSpawner.allowedGroundTypes) if (gt == groundType) { okSoil = true; break; }
-                if (!okSoil) continue;
+                if (stamps >= stampsBudget) break;
+
+                Vector3 chunkOrigin = world.ChunkOriginWorld(coord);
+                float gs = config.chunkSize;
+                Vector3 pos = chunkOrigin + new Vector3((float)rng.NextDouble() * gs, 0f, (float)rng.NextDouble() * gs);
+
+                // ground probe
+                if (!TryFindGround(ref pos, out var groundType)) continue;
+
+                // altitude constraint
+                if (pos.y < treeSpawner.altitudeWorld.min || pos.y > treeSpawner.altitudeWorld.max) continue;
+
+                // slope constraint
+                if (!SlopeOK(pos, treeSpawner.maxSlopeDeg)) continue;
+
+                // global soil whitelist (optional)
+                if (treeSpawner.allowedGroundTypes != null && treeSpawner.allowedGroundTypes.Length > 0)
+                {
+                    bool okSoil = false;
+                    foreach (var gt in treeSpawner.allowedGroundTypes) if (gt == groundType) { okSoil = true; break; }
+                    if (!okSoil) continue;
+                }
+
+                // spacing (coarse Poisson)
+                bool farEnough = true;
+                float minDist2 = treeSpawner.minDistanceBetweenTrees * treeSpawner.minDistanceBetweenTrees;
+                for (int p = 0; p < placed.Count; p++)
+                {
+                    if ((placed[p] - pos).sqrMagnitude < minDist2) { farEnough = false; break; }
+                }
+                if (!farEnough) continue;
+
+                // pick an archetype and check its soil rules
+                var archetype = treeSpawner.PickArchetype(rng);
+                if (archetype == null) continue;
+                if (!GroundAllowedForArchetype(groundType, archetype)) continue;
+
+                if (archetype.requiredSoilDepth > 0f && !HasSoilDepth(pos, groundType, archetype.requiredSoilDepth))
+                    continue;
+
+                // build the tree (trunk + roots + branches/leaves), batched
+                stamps += BuildTreeBatched(batch, pos, rng, archetype);
+                placed.Add(pos);
+
+                if (stamps >= stampsBudget) break;
             }
 
-            // spacing (coarse Poisson)
-            bool farEnough = true;
-            float minDist2 = treeSpawner.minDistanceBetweenTrees * treeSpawner.minDistanceBetweenTrees;
-            for (int p = 0; p < placed.Count; p++)
-            {
-                if ((placed[p] - pos).sqrMagnitude < minDist2) { farEnough = false; break; }
-            }
-            if (!farEnough) continue;
-
-            // pick an archetype and check its soil rules
-            var archetype = treeSpawner.PickArchetype(rng);
-            if (archetype == null) continue;
-            if (!GroundAllowedForArchetype(groundType, archetype)) continue;
-
-            if (archetype.requiredSoilDepth > 0f && !HasSoilDepth(pos, groundType, archetype.requiredSoilDepth))
-                continue;
-
-            // build the tree (trunk + roots + branches/leaves)
-            stamps += BuildTree(pos, rng, archetype);
-            placed.Add(pos);
+            // commit once: single GPU upload + foliage cull per affected chunk
+            batch.Commit();
         }
 
         return stamps;
@@ -232,9 +241,9 @@ public sealed class StructureStage : IPipelineStage
         return accumulated >= depth;
     }
 
-    // ------------------------- Build tree -------------------------
+    // ------------------------- Build tree (batched) -------------------------
 
-    int BuildTree(Vector3 basePos, System.Random rng, TreeArchetypeSO a)
+    int BuildTreeBatched(EditService.WorldEditBatch batch, Vector3 basePos, System.Random rng, TreeArchetypeSO a)
     {
         int stampCount = 0;
 
@@ -245,10 +254,10 @@ public sealed class StructureStage : IPipelineStage
         Vector3 trunkTop = basePos + Vector3.up * trunkH;
 
         // trunk as capsule (sphere sweep)
-        stampCount += StampCapsule(basePos, trunkTop, trunkR, step, a.strengthWorld, TerrainType.Wood, a.forceReplace);
+        stampCount += StampCapsuleBatched(batch, basePos, trunkTop, trunkR, step, a.strengthWorld, TerrainType.Wood, a.forceReplace);
 
-        // --- ROOTS: replace terrain that already exists (skip air/tree) ---
-        stampCount += BuildRoots(basePos, rng, a, step);
+        // --- ROOTS ---
+        stampCount += BuildRootsBatched(batch, basePos, rng, a, step);
 
         // branches
         int bCount = a.branches.Random(rng);
@@ -273,7 +282,7 @@ public sealed class StructureStage : IPipelineStage
                                         basePos.z);
             Vector3 end = start + dir.normalized * len;
 
-            stampCount += StampCapsule(start, end, rad, step, a.strengthWorld, TerrainType.Wood, a.forceReplace);
+            stampCount += StampCapsuleBatched(batch, start, end, rad, step, a.strengthWorld, TerrainType.Wood, a.forceReplace);
 
             // leaf blobs near branch end
             int leafBlobs = a.leafBlobsPerBranch.Random(rng);
@@ -282,26 +291,24 @@ public sealed class StructureStage : IPipelineStage
                 float t = Mathf.Lerp(0.6f, 1.0f, (float)rng.NextDouble());
                 Vector3 c = Vector3.Lerp(start, end, t) + RandomInsideSphere(rng, step * 1.5f);
                 float rr = a.leafBlobRadius.Random(rng);
-                stampCount += StampSphere(c, rr, a.strengthWorld, TerrainType.Leaf, a.forceReplace);
+                stampCount += StampSphereBatched(batch, c, rr, a.strengthWorld, TerrainType.Leaf, a.forceReplace);
             }
         }
 
         return stampCount;
     }
 
-    // ------------------------- ROOTS -------------------------
+    // ------------------------- ROOTS (batched) -------------------------
 
-    int BuildRoots(Vector3 basePos, System.Random rng, TreeArchetypeSO a, float step)
+    int BuildRootsBatched(EditService.WorldEditBatch batch, Vector3 basePos, System.Random rng, TreeArchetypeSO a, float step)
     {
         if (a.roots.max <= 0) return 0;
 
         int stampCount = 0;
 
-        // voxel size (consistent with other sampling)
         float denom = Mathf.Max(0.0001f, (config.gridSize - 3f));
         float voxel = config.chunkSize / denom;
 
-        // start a bit below the surface
         float startDepth = Mathf.Max(voxel * 0.75f, a.rootStartDepth);
         Vector3 startBase = basePos - Vector3.up * startDepth;
 
@@ -312,22 +319,19 @@ public sealed class StructureStage : IPipelineStage
             float r0 = a.rootRadius.Random(rng);
             float r1 = Mathf.Max(0.05f, r0 * Mathf.Clamp01(a.rootTaper01));
 
-            // initial direction: random yaw, slight downward pitch
             float yaw = a.rootYawJitterDeg.Random(rng) * Mathf.Deg2Rad;
-            float pitch = a.rootPitchDeg.Random(rng) * Mathf.Deg2Rad; // downward from horizontal
+            float pitch = a.rootPitchDeg.Random(rng) * Mathf.Deg2Rad;
 
             Quaternion q = Quaternion.AngleAxis(Mathf.Rad2Deg * yaw, Vector3.up)
                          * Quaternion.AngleAxis(Mathf.Rad2Deg * -pitch, Vector3.right);
             Vector3 dir = (q * Vector3.forward).normalized;
 
-            // segmented polyline with gentle turning + downward bias
             int segments = Mathf.Max(1, a.rootSegments.Random(rng));
             float segLen = totalLen / segments;
 
             Vector3 p0 = startBase;
             for (int s = 0; s < segments; s++)
             {
-                // nudge direction: small yaw/pitch jitter and slight downward drift
                 float turnYaw = a.rootTurnJitterDeg.Random(rng) * Mathf.Deg2Rad;
                 float turnPitch = a.rootTurnJitterDeg.Random(rng) * 0.5f * Mathf.Deg2Rad;
                 Quaternion turn = Quaternion.AngleAxis(Mathf.Rad2Deg * turnYaw, Vector3.up)
@@ -335,23 +339,31 @@ public sealed class StructureStage : IPipelineStage
 
                 dir = (turn * dir).normalized;
 
-                // add a lateral wobble
                 Vector3 wobble = RandomInsideSphere(rng, a.rootWobble.Random(rng));
                 Vector3 p1 = p0 + (dir * segLen) + wobble * 0.15f;
 
-                // gently bias downwards so roots stay in soil
                 p1.y -= Mathf.Abs(segLen) * a.rootDownBiasPerSegment;
 
-                // optional cap
                 if (a.rootDepthCap > 0f && p1.y < basePos.y - a.rootDepthCap)
                     break;
 
-                // taper radius along the chain
                 float t = (segments <= 1) ? 1f : (float)(s + 1) / segments;
                 float rNow = Mathf.Lerp(r0, r1, t);
 
-                // Replace-only: carve through existing terrain, skip air/leaf/wood
-                stampCount += StampCapsuleReplaceOnly(p0, p1, rNow, step, a.rootStrengthWorld, TerrainType.Wood);
+                switch (a.rootPlacement)
+                {
+                    case TreeArchetypeSO.RootPlacementMode.ReplaceOnly:
+                        stampCount += StampCapsuleReplaceOnlyBatched(batch, p0, p1, rNow, step, a.rootStrengthWorld, TerrainType.Wood);
+                        break;
+
+                    case TreeArchetypeSO.RootPlacementMode.Normal:
+                        stampCount += StampCapsuleBatched(batch, p0, p1, rNow, step, a.rootStrengthWorld, TerrainType.Wood, forceReplace: false);
+                        break;
+
+                    case TreeArchetypeSO.RootPlacementMode.ForceReplace:
+                        stampCount += StampCapsuleBatched(batch, p0, p1, rNow, step, a.rootStrengthWorld, TerrainType.Wood, forceReplace: true);
+                        break;
+                }
 
                 p0 = p1;
             }
@@ -360,7 +372,9 @@ public sealed class StructureStage : IPipelineStage
         return stampCount;
     }
 
-    int StampCapsuleReplaceOnly(Vector3 a, Vector3 b, float radius, float step, float strength, TerrainType type)
+    // ------------------------- Generic batched stampers -------------------------
+
+    int StampCapsuleBatched(EditService.WorldEditBatch batch, Vector3 a, Vector3 b, float radius, float step, float strength, TerrainType type, bool forceReplace)
     {
         int count = 0;
         float len = Vector3.Distance(a, b);
@@ -369,18 +383,39 @@ public sealed class StructureStage : IPipelineStage
         {
             float t = steps == 0 ? 0f : (float)i / steps;
             Vector3 p = Vector3.Lerp(a, b, t);
-            count += StampSphereReplaceOnly(p, radius, strength, type);
+            batch.Sphere(p, radius, strength, type, breakingProgress: 0, forceSameBlock: false, previewOnly: false, forceReplace: forceReplace);
+            count++;
         }
         return count;
     }
 
-    int StampSphereReplaceOnly(Vector3 center, float radius, float strength, TerrainType type)
+    int StampSphereBatched(EditService.WorldEditBatch batch, Vector3 center, float radius, float strength, TerrainType type, bool forceReplace)
+    {
+        batch.Sphere(center, radius, strength, type, breakingProgress: 0, forceSameBlock: false, previewOnly: false, forceReplace: forceReplace);
+        return 1;
+    }
+
+    int StampCapsuleReplaceOnlyBatched(EditService.WorldEditBatch batch, Vector3 a, Vector3 b, float radius, float step, float strength, TerrainType type)
+    {
+        int count = 0;
+        float len = Vector3.Distance(a, b);
+        int steps = Mathf.Max(1, Mathf.CeilToInt(len / step));
+        for (int i = 0; i <= steps; i++)
+        {
+            float t = steps == 0 ? 0f : (float)i / steps;
+            Vector3 p = Vector3.Lerp(a, b, t);
+            count += StampSphereReplaceOnlyBatched(batch, p, radius, strength, type);
+        }
+        return count;
+    }
+
+    int StampSphereReplaceOnlyBatched(EditService.WorldEditBatch batch, Vector3 center, float radius, float strength, TerrainType type)
     {
         TerrainType t;
         try { t = edits.GetTerrainTypeAtWorld(center); }
         catch (Exception ex)
         {
-            Debug.LogWarning($"StructureStage.StampSphereReplaceOnly: sample failed at {center}: {ex.Message}");
+            Debug.LogWarning($"StructureStage.StampSphereReplaceOnlyBatched: sample failed at {center}: {ex.Message}");
             return 0;
         }
 
@@ -388,29 +423,7 @@ public sealed class StructureStage : IPipelineStage
         if (t == default || t == TerrainType.Leaf || t == TerrainType.Wood)
             return 0;
 
-        edits.EditSphere(center, radius, strength, type, breakingProgress: 0, forceSameBlock: false, forceReplace: true);
-        return 1;
-    }
-
-    // ------------------------- Generic stampers -------------------------
-
-    int StampCapsule(Vector3 a, Vector3 b, float radius, float step, float strength, TerrainType type, bool forceReplace)
-    {
-        int count = 0;
-        float len = Vector3.Distance(a, b);
-        int steps = Mathf.Max(1, Mathf.CeilToInt(len / step));
-        for (int i = 0; i <= steps; i++)
-        {
-            float t = steps == 0 ? 0f : (float)i / steps;
-            Vector3 p = Vector3.Lerp(a, b, t);
-            count += StampSphere(p, radius, strength, type, forceReplace);
-        }
-        return count;
-    }
-
-    int StampSphere(Vector3 center, float radius, float strength, TerrainType type, bool forceReplace)
-    {
-        edits.EditSphere(center, radius, strength, type, breakingProgress: 0, forceSameBlock: false, forceReplace: forceReplace);
+        batch.Sphere(center, radius, strength, type, breakingProgress: 0, forceSameBlock: false, previewOnly: false, forceReplace: true);
         return 1;
     }
 

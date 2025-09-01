@@ -21,7 +21,7 @@ MonoBehaviour:
   boxSize: {x: 8, y: 8, z: 1}
   sphereRadiusRange: {x: 0.1, y: 12}
   boxSizeMin: {x: 4, y: 4, z: 1}
-  boxSizeMax: {x: 16, y: 16, z: 1}
+  boxSizeMax: {x: 32, y: 32, z: 1}
   anchored: 1
   lockYawWhileActive: 1
   hideBrush: 0

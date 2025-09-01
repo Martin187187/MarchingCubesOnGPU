@@ -42,35 +42,36 @@ MonoBehaviour:
     max: 7
   branchStartHeight01: 0.35
   strengthWorld: 1
-  forceReplace: 1
+  forceReplace: 0
   allowedGroundTypes: 
   requiredSoilDepth: 0
   roots:
-    min: 2
-    max: 5
+    min: 4
+    max: 9
   rootLen:
-    min: 2.5
-    max: 6.5
+    min: 4
+    max: 16
   rootRadius:
-    min: 0.8
-    max: 1.2
+    min: 0.98
+    max: 1.71
   rootTaper01: 0.5
-  rootStartDepth: 0.35
+  rootStartDepth: 0
   rootPitchDeg:
     min: 10
-    max: 25
+    max: 63.3
   rootYawJitterDeg:
     min: 0
     max: 360
   rootTurnJitterDeg:
     min: 3
-    max: 12
+    max: 14.1
   rootWobble:
-    min: 0.3
-    max: 0.5
+    min: 0.27
+    max: 0.89
   rootSegments:
     min: 3
     max: 12
   rootStrengthWorld: 1
   rootDownBiasPerSegment: 0.451
   rootDepthCap: 0
+  rootPlacement: 0

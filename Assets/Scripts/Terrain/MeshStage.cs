@@ -46,7 +46,6 @@ public sealed class MeshStage : IPipelineStage
             {
                 var list = entry.q == Q.High ? high : normal;
                 // Remove and re-add at tail to "move to back"
-                list.Remove(entry.node);
                 entry.node = list.AddLast(rt);
                 index[rt.coord] = (entry.q, entry.node);
                 return;
@@ -54,7 +53,6 @@ public sealed class MeshStage : IPipelineStage
 
             // Priority changed: move between queues
             var fromList = entry.q == Q.High ? high : normal;
-            fromList.Remove(entry.node);
 
             var toList = targetQ == Q.High ? high : normal;
             var newNode = toList.AddLast(rt);
