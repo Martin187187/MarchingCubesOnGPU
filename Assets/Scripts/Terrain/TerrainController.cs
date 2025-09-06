@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(TerrainHeightQuery))]
 public class TerrainController : MonoBehaviour
 {
     [Header("Assets / Shaders")]
@@ -31,6 +32,15 @@ public class TerrainController : MonoBehaviour
     StructureStage structureStage;
     ColliderPromotionStage colliderPromoter;
     EditService edits;
+    
+    
+    IChunkQueue<ChunkRuntime> rawQueue;
+    IChunkQueue<ChunkRuntime> densQueue;
+    IChunkQueue<ChunkRuntime> structQueue;
+    IChunkQueue<ChunkRuntime> meshQueue;
+    IChunkQueue<ChunkRuntime> meshPrioQueue;
+    IChunkQueue<ChunkRuntime> collQueue;
+    private TerrainHeightQuery _terrainHeightQuery;
 
     readonly Dictionary<Vector3Int, ChunkRuntime> loaded = new();
     float nextWantedTime;
@@ -40,6 +50,9 @@ public class TerrainController : MonoBehaviour
 
     void Awake()
     {
+        _terrainHeightQuery = GetComponent<TerrainHeightQuery>();
+        _terrainHeightQuery.controller = this;
+        _terrainHeightQuery.Init();
         if (!config) { enabled = false; return; }
 
         world = new ChunkWorld(transform.position, config.chunkSize, config.gridSize);
@@ -47,12 +60,21 @@ public class TerrainController : MonoBehaviour
         var foliageSettings = config.foliageSettings ? config.foliageSettings.ToChunkFoliage() : default;
         pool = new ChunkPool(transform, materialInstances, marchingCubesShader, noiseShader, terrainLayers, foliageSettings, config.maxChunks);
         pool.Prewarm(Mathf.Min(config.prewarmChunks, config.maxChunks));
-
-        meshStage = new MeshStage(loaded, config.colliderRadiusChunks, config.verticalRadiusChunks);
-        densityStage = new DensityStage(loaded, meshStage);
+        
+        rawQueue = new ChunkQueue<ChunkRuntime>();
+        densQueue = new ChunkQueue<ChunkRuntime>();
+        structQueue = new ChunkQueue<ChunkRuntime>();
+        meshPrioQueue = new ChunkQueue<ChunkRuntime>();
+        meshQueue = new ChunkQueue<ChunkRuntime>();
+        collQueue = new ChunkQueue<ChunkRuntime>();
+        
+        densityStage = new DensityStage(loaded, rawQueue, densQueue);
+        structureStage = new StructureStage(loaded, densQueue, structQueue, world, config, config.treeSpawner);
+        meshStage = new MeshStage(loaded, config.colliderRadiusChunks, config.verticalRadiusChunks, meshPrioQueue, structQueue, collQueue);
+        colliderPromoter = new ColliderPromotionStage(loaded, config.colliderRadiusChunks, config.verticalRadiusChunks, collQueue);
+        
+        
         edits = new EditService(loaded, world, meshStage, config, inventory);
-        structureStage = new StructureStage(loaded, edits, world, config, config.treeSpawner);
-        colliderPromoter = new ColliderPromotionStage(loaded, config.colliderRadiusChunks, config.verticalRadiusChunks);
         wanted = new WantedSetCalculator(config.viewRadiusChunks, config.verticalRadiusChunks, config.unloadHysteresis);
     }
 
@@ -121,7 +143,7 @@ public class TerrainController : MonoBehaviour
         cell.Transform.SetParent(transform, true);
         cell.GameObject.SetActive(true);
 
-        var rt = new ChunkRuntime { coord = coord, cell = cell, stage = Stage.Allocated, colliderCooked = false };
+        var rt = new ChunkRuntime { coord = coord, cell = cell, stage = Stage.Raw, colliderCooked = false };
         loaded.Add(coord, rt);
         densityStage.Enqueue(rt);
     }
@@ -155,4 +177,30 @@ public class TerrainController : MonoBehaviour
 
     public Vector3 SnapToGrid(Vector3 position, float snapFactor)
         => world.SnapToGrid(position, snapFactor);
+    
+    // ---------- Debug/Telemetry accessors ----------
+    public int QueueRawCount        => rawQueue?.Count     ?? 0;
+    public int QueueDensityCount    => densQueue?.Count    ?? 0;
+    public int QueueStructureCount  => structQueue?.Count  ?? 0;
+    public int QueueMeshPrioCount   => meshPrioQueue?.Count?? 0;
+    public int QueueMeshCount       => meshQueue?.Count    ?? 0;
+    public int QueueColliderCount   => collQueue?.Count    ?? 0;
+    public int LoadedCount          => loaded?.Count       ?? 0;
+
+    // Small histogram of current chunk stages
+    public void GetStageHistogram(Dictionary<Stage,int> dst)
+    {
+        dst.Clear();
+        foreach (var kv in loaded)
+        {
+            var s = kv.Value.stage;
+            if (!dst.TryGetValue(s, out var c)) c = 0;
+            dst[s] = c + 1;
+        }
+    }
+
+    // optional: expose player chunk for UI
+    public Vector3Int? CurrentPlayerChunk =>
+        player ? world.WorldToChunkCoord(player.position) : (Vector3Int?)null;
+
 }

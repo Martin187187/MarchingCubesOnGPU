@@ -5,13 +5,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="43f7d2dd-6663-4526-bf04-7b3e0cc814a1" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/PipelineStages/StructureStage.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/.idea.MarchingCubesOnGPU/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.MarchingCubesOnGPU/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/ChunkCell.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/ChunkCell.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/EditService.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/EditService.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/StructureStage.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/StructureStage.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/TreeArchetype.asset" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/TreeArchetype.asset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/TreeArchetypeSO.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/TreeArchetypeSO.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scenes/Terrain.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scenes/Terrain.unity" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/PlayerController.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/PlayerController.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/ChunkCellAdapter.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/ChunkCellAdapter.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/ColliderPromotionStage.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/ColliderPromotionStage.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/Compute/NoiseDensity.compute" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/Compute/NoiseDensity.compute" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/DensityStage.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/PipelineStages/DensityStage.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/DensityStage.cs.meta" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/PipelineStages/DensityStage.cs.meta" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/IChunkCell.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/IChunkCell.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/MeshStage.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/MeshStage.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/Pipeline.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/Pipeline.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/StructureStage.cs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/StructureStage.cs.meta" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/PipelineStages/StructureStage.cs.meta" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/TerrainController.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/TerrainController.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Assets/Scripts/Terrain/TreeSpawner.asset" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Terrain/TreeSpawner.asset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/TextMesh Pro/Resources/Fonts &amp; Materials/LiberationSans SDF - Fallback.asset" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/TextMesh Pro/Resources/Fonts &amp; Materials/LiberationSans SDF - Fallback.asset" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -33,6 +43,11 @@
     &quot;accountId&quot;: &quot;1d04d570-9766-42b6-aa5f-132e7520146c&quot;
   }
 }</component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/d44b17e136d09081da1e8fd0e8c83fde60e11818b9f2442d7ed8cb733fae895e/System.Collections.Generic.cs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Assets/CirclePointRayDrawer.cs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Assets/Scripts/Terrain/PipelineStages/StructureHelpers/DeterministicCircleSampler.cs" root0="FORCE_HIGHLIGHTING" />
+  </component>
   <component name="MetaFilesCheckinStateConfiguration" checkMetaFiles="true" />
   <component name="ProjectColorInfo">{
   &quot;customColor&quot;: &quot;&quot;,
@@ -112,8 +127,21 @@
       <workItem from="1756642913343" duration="3594000" />
       <workItem from="1756666153143" duration="359000" />
       <workItem from="1756727962673" duration="675000" />
-      <workItem from="1756736016782" duration="7707000" />
+      <workItem from="1756736016782" duration="12870000" />
+      <workItem from="1756892015328" duration="3641000" />
+      <workItem from="1756972987866" duration="13404000" />
+      <workItem from="1757075374765" duration="20904000" />
+      <workItem from="1757159731563" duration="7415000" />
     </task>
+    <task id="LOCAL-00001" summary="increased perfomance for tree generation. still has bug">
+      <option name="closed" value="true" />
+      <created>1756745485338</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1756745485338</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -129,5 +157,7 @@
   <component name="UnityUnitTestConfiguration" currentTestLauncher="Both" />
   <component name="VcsManagerConfiguration">
     <option name="CLEAR_INITIAL_COMMIT_MESSAGE" value="true" />
+    <MESSAGE value="increased perfomance for tree generation. still has bug" />
+    <option name="LAST_COMMIT_MESSAGE" value="increased perfomance for tree generation. still has bug" />
   </component>
 </project>

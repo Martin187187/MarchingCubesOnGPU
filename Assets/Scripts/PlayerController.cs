@@ -21,6 +21,7 @@ public class PlayerController : MonoBehaviour
         HandleMovement();
         HandleRotation();
         HandleJump();
+        
     }
 
     private void HandleMovement()

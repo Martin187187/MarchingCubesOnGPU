@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public enum Stage { Allocated, DensityReady, MeshReady, Ready }
+public enum Stage { Raw, DensityCompleted, StructureCompleted, MeshCompleted, Finished }
 
 public sealed class ChunkRuntime
 {

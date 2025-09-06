@@ -1,0 +1,92 @@
+﻿#pragma kernel QueryHeight
+#include "Noise.compute"
+
+struct RetrievedPosition { float height; };
+RWStructuredBuffer<RetrievedPosition> retrievedPositionBuffer;
+
+// Inputs
+int   numPointsPerAxis;
+float chunkSize;
+
+float3 position;
+float3 offset;
+int   octaves;
+float lacunarity;
+float persistence;
+float noiseScale;        // expect > 0
+float noiseWeight;
+float floorOffset;
+float weightMultiplier;
+float hardFloor;
+float hardFloorWeight;
+
+// Replace sigmoid/isoLevel with a single linear threshold:
+// isoLinearThreshold = ln(isoLevel / (1 - isoLevel)) / sigmoidA
+// (compute once on CPU; see C# snippet below)
+float isoLinearThreshold;
+
+// ------------------------------
+// Helpers
+// ------------------------------
+float spacing_from_points(int n, float sizeMinus3)
+{
+    // n = numPointsPerAxis, denominator (n-3) should be prevalidated on CPU
+    return sizeMinus3 / (float)(n - 3);
+}
+
+[numthreads(1,1,1)]
+void QueryHeight (uint3 id : SV_DispatchThreadID)
+{
+    // Hoisted invariants
+    const float spacing   = chunkSize / (float)(numPointsPerAxis - 3);
+    const float3 basePos  = ( (float3)id - 1.0 ) * spacing + position;
+    const int steps       = numPointsPerAxis * 8;
+    const float startY    = basePos.y + (float)(numPointsPerAxis * 4) * spacing;
+    const float baseFreq  = noiseScale * 0.01;   // cheaper than /100 each time
+
+    RetrievedPosition result;
+    // Optionally initialize to a sentinel if no crossing is found
+    result.height = startY; // or e.g. -3.402823e38
+
+    // Scan downwards; early exit on first crossing
+    [loop]
+    for (int k = 0; k < steps; ++k)
+    {
+        float y = startY - (float)k * spacing;
+        float3 p = float3(basePos.x, y, basePos.z);
+
+        // fBm with weighted ridges
+        float noise = 0.0;
+        float freq  = baseFreq;
+        float amp   = 1.0;
+        float weight = 1.0;
+
+        [loop]
+        for (int j = 0; j < octaves; ++j)
+        {
+            float n = snoise(p * freq + offset);
+            float v = 1.0 - abs(n);
+                  v = v * v;
+                  v *= weight;
+
+            weight = saturate(v * weightMultiplier);
+            noise += v * amp;
+
+            amp  *= persistence;
+            freq *= lacunarity;
+        }
+
+        float finalVal = -(y + floorOffset) + noise * noiseWeight;
+        // Branch is fine here; tiny, coherent. If you prefer branchless:
+        // finalVal += hardFloorWeight * step(y, hardFloor);  // check your step() convention
+        if (y < hardFloor) finalVal += hardFloorWeight;
+
+        // Compare in linear domain – no exp() needed
+        if (finalVal > isoLinearThreshold)
+        {
+            result.height = y;
+            retrievedPositionBuffer[0] = result;
+            break; // early exit saves tons of work
+        }
+    }
+}

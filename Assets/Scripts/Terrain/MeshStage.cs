@@ -3,111 +3,105 @@ using UnityEngine;
 
 public sealed class MeshStage : IPipelineStage
 {
-    readonly Dictionary<Vector3Int, ChunkRuntime> loaded;
-    readonly int colliderRadiusChunks;
-    readonly int verticalRadiusChunks;
+    private readonly IDictionary<Vector3Int, ChunkRuntime> loaded;
+    private readonly int colliderRadiusChunks;
+    private readonly int verticalRadiusChunks;
 
-    // Queues implemented as linked lists so we can move nodes in O(1)
-    readonly LinkedList<ChunkRuntime> high = new();
-    readonly LinkedList<ChunkRuntime> normal = new();
+    // Input queues (priority)
+    private readonly IChunkQueue<ChunkRuntime> inputHigh;
+    private readonly IChunkQueue<ChunkRuntime> inputNormal;
 
-    // Track where each coord currently lives and its node
-    enum Q { High, Normal }
-    readonly Dictionary<Vector3Int, (Q q, LinkedListNode<ChunkRuntime> node)> index
-        = new();
+    // Output queue (to collider stage or next pipeline hop)
+    private readonly IChunkQueue<ChunkRuntime> output;
 
-    public MeshStage(Dictionary<Vector3Int, ChunkRuntime> loaded, int colliderRadiusChunks, int verticalRadiusChunks)
+    // Prevent duplicate enqueues per coord
+    private readonly HashSet<Vector3Int> inQueue = new();
+
+    public MeshStage(
+        IDictionary<Vector3Int, ChunkRuntime> loaded,
+        int colliderRadiusChunks,
+        int verticalRadiusChunks,
+        IChunkQueue<ChunkRuntime> inputHigh,
+        IChunkQueue<ChunkRuntime> inputNormal,
+        IChunkQueue<ChunkRuntime> output)
     {
         this.loaded = loaded;
         this.colliderRadiusChunks = colliderRadiusChunks;
         this.verticalRadiusChunks = verticalRadiusChunks;
+        this.inputHigh = inputHigh;
+        this.inputNormal = inputNormal;
+        this.output = output;
     }
 
     public string Name => "Mesh";
-    public bool HasWork => high.Count > 0 || normal.Count > 0;
+    public bool HasWork => inputHigh.Count > 0 || inputNormal.Count > 0;
 
     // ---------- Public enqueue API ----------
-
-    public void EnqueueHigh(ChunkRuntime rt) => Enqueue(rt, Q.High);
-    public void EnqueueNormal(ChunkRuntime rt) => Enqueue(rt, Q.Normal);
-
-    public void Enqueue(ChunkRuntime rt, bool highPriority) =>
-        Enqueue(rt, highPriority ? Q.High : Q.Normal);
-
-    void Enqueue(ChunkRuntime rt, Q targetQ)
+    public void EnqueueHigh(ChunkRuntime rt) => Enqueue(rt, highPriority: true);
+    public void EnqueueNormal(ChunkRuntime rt) => Enqueue(rt, highPriority: false);
+    public void Enqueue(ChunkRuntime rt, bool highPriority)
     {
         if (rt == null) return;
+        if (!inQueue.Add(rt.coord)) return; // already queued somewhere
 
-        // If it's already in a queue…
-        if (index.TryGetValue(rt.coord, out var entry))
-        {
-            // If it's already in the same queue: move to back
-            if (entry.q == targetQ)
-            {
-                var list = entry.q == Q.High ? high : normal;
-                // Remove and re-add at tail to "move to back"
-                entry.node = list.AddLast(rt);
-                index[rt.coord] = (entry.q, entry.node);
-                return;
-            }
-
-            // Priority changed: move between queues
-            var fromList = entry.q == Q.High ? high : normal;
-
-            var toList = targetQ == Q.High ? high : normal;
-            var newNode = toList.AddLast(rt);
-            index[rt.coord] = (targetQ, newNode);
-            return;
-        }
-
-        // New entry: add at back of target queue
-        var listToAdd = targetQ == Q.High ? high : normal;
-        var node = listToAdd.AddLast(rt);
-        index.Add(rt.coord, (targetQ, node));
-    }
-
-    // ---------- Dequeue helper ----------
-
-    ChunkRuntime DequeueAny()
-    {
-        LinkedList<ChunkRuntime> list = null;
-        if (high.Count > 0) list = high;
-        else if (normal.Count > 0) list = normal;
-        else return null;
-
-        var node = list.First;
-        var rt = node.Value;
-        list.RemoveFirst();
-        index.Remove(rt.coord); // allow re-queueing later
-        return rt;
+        if (highPriority) inputHigh.Enqueue(rt);
+        else inputNormal.Enqueue(rt);
     }
 
     // ---------- Run ----------
-
     public void Run(int budget, in StageContext ctx)
     {
-        int count = 0;
-        while (count < budget)
+        int processed = 0;
+        while (processed < budget && TryDequeuePriority(out var rt))
         {
-            var rt = DequeueAny();
-            if (rt == null) break;
+            // Drop if chunk got unloaded meanwhile
+            if (!loaded.ContainsKey(rt.coord))
+            {
+                inQueue.Remove(rt.coord);
+                continue;
+            }
 
-            // Skip if chunk unloaded since enqueue
-            if (!loaded.ContainsKey(rt.coord)) continue;
-
-            bool buildCollider = false;
+            // Decide collider now vs later (streaming-friendly)
+            bool buildColliderNow = false;
             if (ctx.PlayerChunk.HasValue)
             {
                 var d = rt.coord - ctx.PlayerChunk.Value;
                 int distXZ = Mathf.Max(Mathf.Abs(d.x), Mathf.Abs(d.z));
                 int distY = Mathf.Abs(d.y);
-                buildCollider = (distXZ <= colliderRadiusChunks) && (distY <= verticalRadiusChunks);
+                buildColliderNow = (distXZ <= colliderRadiusChunks) && (distY <= verticalRadiusChunks);
             }
 
-            rt.cell.BuildMesh(buildCollider);
-            rt.stage = Stage.Ready;
-            rt.colliderCooked = buildCollider;
-            count++;
+            // Build mesh (+ optional collider)
+            rt.cell.BuildMesh(buildColliderNow);
+
+            // State & flags
+            if (buildColliderNow)
+            {
+                rt.colliderCooked = true;
+                rt.stage = Stage.Finished;     // or ColliderReady, per your enum
+            }
+            else
+            {
+                rt.colliderCooked = false;
+                rt.stage = Stage.MeshCompleted;         // or MeshReady
+            }
+
+            // Hand off to next stage (e.g., collider promotion)
+            output?.Enqueue(rt);
+
+            inQueue.Remove(rt.coord);
+            processed++;
         }
+    }
+
+    // ---------- Helpers ----------
+    private bool TryDequeuePriority(out ChunkRuntime rt)
+    {
+        // Always favor high-priority; fall back to normal
+        if (inputHigh.TryDequeue(out rt)) return true;
+        if (inputNormal.TryDequeue(out rt)) return true;
+
+        rt = null;
+        return false;
     }
 }

@@ -22,7 +22,7 @@ float hardFloor;
 float hardFloorWeight;
 
 float4 params = float4(1,0,0,0);
-
+    
 int val;
 float isoLevel;
 float sigmoid(float x, float a) {

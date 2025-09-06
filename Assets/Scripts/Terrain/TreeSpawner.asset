@@ -19,7 +19,7 @@ MonoBehaviour:
   treesPerChunk:
     min: 0
     max: 1
-  minDistanceBetweenTrees: 3
+  minDistanceBetweenTrees: 13.73
   altitudeWorld:
     min: -50
     max: 9999
